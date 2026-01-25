@@ -1,2 +1,8 @@
 # TaskIt
-A simple Web based Task Tracker for task analysis
+
+A simple GUI Task Tracker for task analysis in Rust (GPUI).
+
+## Architecture
+- **Framework**: GPUI
+- **Database**: SQLite (Local-first)
+- **Target**: Linux Desktop
