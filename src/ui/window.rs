@@ -4,8 +4,14 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::state::AppState;
 use crate::ui::{sidebar, task_list};
+use crate::config::Config;
 
-pub fn build(app: &Application, state: Rc<RefCell<AppState>>) -> ApplicationWindow {
+pub fn build(
+    app: &Application, 
+    state: Rc<RefCell<AppState>>,
+    config: Rc<RefCell<Config>>,
+    on_update: Rc<dyn Fn(Config)>
+) -> ApplicationWindow {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("TaskIt")
@@ -28,7 +34,8 @@ pub fn build(app: &Application, state: Rc<RefCell<AppState>>) -> ApplicationWind
         if let Some(f) = task_list_refresher_clone.borrow().as_ref() { f(); }
     });
 
-    let (sidebar_widget, s_refresh) = sidebar::build(state.clone(), refresh_all.clone());
+    // Pass config/updater to sidebar
+    let (sidebar_widget, s_refresh) = sidebar::build(state.clone(), refresh_all.clone(), config, on_update, window.clone().into());
     let (content_widget, t_refresh) = task_list::build(state.clone(), refresh_all.clone());
 
     *sidebar_refresher.borrow_mut() = Some(Box::new(s_refresh));

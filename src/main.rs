@@ -2,13 +2,16 @@ mod db;
 mod domain;
 mod state;
 mod ui;
+mod config;
 
 use gtk::prelude::*;
-use gtk::Application;
+use gtk::{Application, CssProvider, StyleContext, Settings};
 use std::rc::Rc;
 use std::cell::RefCell;
 use db::Db;
 use state::AppState;
+use config::Config;
+use ui::themes;
 
 fn main() {
     let app = Application::builder()
@@ -20,25 +23,16 @@ fn main() {
 }
 
 fn build_ui(app: &Application) {
-    let provider = gtk::CssProvider::new();
-    // GTK3 CSS is slightly different, uses standard CSS properties.
-    // 'alpha(currentColor, 0.1)' might not work in older GTK3 CSS parsers, but standard GTK3 supports it or rgba().
-    // We'll use standard GTK style classes where possible.
-    provider.load_from_data(b"
-        .task-done { text-decoration: line-through; opacity: 0.6; }
-        .sidebar-item { padding: 8px; border-radius: 6px; }
-        .sidebar-item:hover { background-color: rgba(0,0,0,0.05); } 
-        .boxed-list { border: 1px solid alpha(currentColor, 0.15); border-radius: 8px; }
-        .card { border: 1px solid alpha(currentColor, 0.15); border-radius: 8px; padding: 12px; }
-        .flat { background: none; border: none; box-shadow: none; }
-        .suggested-action { background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; }
-        .title-label { font-weight: bold; font-size: 16pt; }
-        .dim-label { opacity: 0.6; }
-        /* Dark mode tweaks if needed */
-    ").expect("Failed to load CSS");
+    let provider = CssProvider::new();
+    
+    // Load config
+    let config = Config::load();
+    
+    // Apply initial style
+    update_style(&provider, &config);
 
     if let Some(screen) = gtk::gdk::Screen::default() {
-        gtk::StyleContext::add_provider_for_screen(
+        StyleContext::add_provider_for_screen(
             &screen,
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
@@ -48,15 +42,49 @@ fn build_ui(app: &Application) {
     let db = Db::init().expect("Failed to initialize database");
     let state = Rc::new(RefCell::new(AppState::new(db)));
     
-    // Initialize theme
-    let is_dark = state.borrow().is_dark_mode;
-    if let Some(settings) = gtk::Settings::default() {
+    if let Some(settings) = Settings::default() {
+        let is_dark = config.theme == "Dark";
         settings.set_gtk_application_prefer_dark_theme(is_dark);
-        settings.set_gtk_theme_name(Some(if is_dark { "Adwaita-dark" } else { "Adwaita" }));
     }
-
+    
     state.borrow_mut().refresh();
 
-    let window = ui::window::build(app, state);
+    let config_rc = Rc::new(RefCell::new(config));
+    
+    let provider_clone = provider.clone();
+    let update_fn = Rc::new(move |new_config: Config| {
+        update_style(&provider_clone, &new_config);
+        
+        if let Some(settings) = Settings::default() {
+             let is_dark = new_config.theme == "Dark";
+             settings.set_gtk_application_prefer_dark_theme(is_dark);
+        }
+    });
+
+    let window = ui::window::build(app, state, config_rc, update_fn);
     window.show_all();
+}
+
+fn update_style(provider: &CssProvider, config: &Config) {
+    let theme_css = themes::get_theme_css(&config.theme);
+    
+    // Font handling: Try to parse font name if it comes from FontButton (e.g., "Sans 12")
+    // CSS font-family usually expects just family name.
+    // However, Pango font descriptions in CSS (via -gtk-font-name or font property) can handle size too.
+    // Let's try to set the global font using the wildcard *
+    let font_css = if let Some(font) = &config.font {
+        // "font" property is shorthand, "font-family" is specific. 
+        // If the string is "Inter Regular 11", we can try `font: "Inter Regular 11";`
+        format!("* {{ font: {}; }}", font) 
+    } else {
+        "".to_string()
+    };
+
+    let full_css = format!("
+        {}
+        {}
+        .task-done {{ text-decoration: line-through; opacity: 0.6; }}
+    ", theme_css, font_css);
+
+    let _ = provider.load_from_data(full_css.as_bytes());
 }
