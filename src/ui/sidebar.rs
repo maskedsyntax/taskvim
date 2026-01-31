@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{Box, Button, Entry, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Image, Popover, GestureMultiPress, Window, Separator};
+use gtk::{Box, Button, Entry, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Image, Popover, GestureMultiPress, Window};
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::state::{AppState, Filter};

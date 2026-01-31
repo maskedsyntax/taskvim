@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{Box, Button, ComboBoxText, Dialog, FontButton, Label, Orientation, Window};
+use gtk::{Box, ComboBoxText, Dialog, FontButton, Label, Orientation, Window};
 use crate::config::Config;
 use crate::ui::themes;
 

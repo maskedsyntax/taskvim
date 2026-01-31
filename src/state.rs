@@ -1,9 +1,7 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use crate::db::Db;
 use crate::domain::{Task, Project, TaskStatus};
-use chrono::{Local, Datelike, Utc};
+use chrono::{Local, Utc};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {

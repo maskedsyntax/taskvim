@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
 use directories::ProjectDirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

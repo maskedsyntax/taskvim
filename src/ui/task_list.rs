@@ -4,7 +4,7 @@ use gtk::glib;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::state::{AppState};
-use crate::domain::{Task, TaskStatus};
+use crate::domain::TaskStatus;
 use chrono::{Local, Utc, TimeZone};
 
 pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::Widget, impl Fn()) {

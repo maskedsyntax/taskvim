@@ -69,13 +69,20 @@ fn update_style(provider: &CssProvider, config: &Config) {
     let theme_css = themes::get_theme_css(&config.theme);
     
     // Font handling: Try to parse font name if it comes from FontButton (e.g., "Sans 12")
-    // CSS font-family usually expects just family name.
-    // However, Pango font descriptions in CSS (via -gtk-font-name or font property) can handle size too.
-    // Let's try to set the global font using the wildcard *
+    // We split by space, take the last part as size if numeric, join the rest as family.
     let font_css = if let Some(font) = &config.font {
-        // "font" property is shorthand, "font-family" is specific. 
-        // If the string is "Inter Regular 11", we can try `font: "Inter Regular 11";`
-        format!("* {{ font: {}; }}", font) 
+        let parts: Vec<&str> = font.split_whitespace().collect();
+        if let Some((last, rest)) = parts.split_last() {
+            if let Ok(size) = last.parse::<f64>() {
+                let family = rest.join(" ");
+                format!("* {{ font-family: \"{}\"; font-size: {}pt; }}", family, size)
+            } else {
+                // Fallback if no size found or not numeric
+                format!("* {{ font-family: \"{}\"; }}", font)
+            }
+        } else {
+            "".to_string()
+        }
     } else {
         "".to_string()
     };
