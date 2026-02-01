@@ -61,14 +61,16 @@ impl Task {
 pub struct Project {
     pub id: Option<i64>,
     pub name: String,
+    pub color: String,
     pub created_at: DateTime<Utc>,
 }
 
 impl Project {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, color: String) -> Self {
         Self {
             id: None,
             name,
+            color,
             created_at: Utc::now(),
         }
     }

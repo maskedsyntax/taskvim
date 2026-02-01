@@ -43,10 +43,14 @@ impl Db {
             "CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '#3584e4',
                 created_at TEXT NOT NULL
             )",
             [],
         )?;
+
+        // Migration for existing tables
+        let _ = self.conn.execute("ALTER TABLE projects ADD COLUMN color TEXT NOT NULL DEFAULT '#3584e4'", []);
 
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS tasks (
@@ -148,8 +152,8 @@ impl Db {
     pub fn create_project(&self, project: &Project) -> Result<i64> {
         let created_at = project.created_at.to_rfc3339();
         self.conn.execute(
-            "INSERT INTO projects (name, created_at) VALUES (?1, ?2)",
-            params![project.name, created_at],
+            "INSERT INTO projects (name, color, created_at) VALUES (?1, ?2, ?3)",
+            params![project.name, project.color, created_at],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -157,8 +161,8 @@ impl Db {
     pub fn update_project(&self, project: &Project) -> Result<()> {
         let id = project.id.context("Project ID is missing")?;
         self.conn.execute(
-            "UPDATE projects SET name = ?1 WHERE id = ?2",
-            params![project.name, id],
+            "UPDATE projects SET name = ?1, color = ?2 WHERE id = ?3",
+            params![project.name, project.color, id],
         )?;
         Ok(())
     }
@@ -178,14 +182,15 @@ impl Db {
     }
 
     pub fn get_projects(&self) -> Result<Vec<Project>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, created_at FROM projects")?;
+        let mut stmt = self.conn.prepare("SELECT id, name, color, created_at FROM projects")?;
         let proj_iter = stmt.query_map([], |row| {
-             let created_at_str: String = row.get(2)?;
+             let created_at_str: String = row.get(3)?;
              let created_at = DateTime::parse_from_rfc3339(&created_at_str).unwrap().with_timezone(&Utc);
 
              Ok(Project {
                  id: Some(row.get(0)?),
                  name: row.get(1)?,
+                 color: row.get(2)?,
                  created_at,
              })
         })?;

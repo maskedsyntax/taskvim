@@ -102,7 +102,11 @@ impl AppState {
     }
 
     pub fn add_project(&mut self, name: String) -> anyhow::Result<()> {
-        let project = Project::new(name);
+        let colors = ["#3584e4", "#33d17a", "#f6d32d", "#ff7800", "#e01b24", "#9141ac"];
+        let idx = self.projects.len() % colors.len();
+        let color = colors[idx].to_string();
+        
+        let project = Project::new(name, color);
         let db = self.db.lock().unwrap();
         db.create_project(&project)?;
         drop(db);

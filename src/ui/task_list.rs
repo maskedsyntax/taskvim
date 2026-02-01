@@ -1,11 +1,11 @@
 use gtk::prelude::*;
-use gtk::{Box, Button, Entry, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Image, CheckButton, MenuButton, Calendar, Popover, HeaderBar, IconSize};
+use gtk::{Box, Button, Entry, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Image, CheckButton, MenuButton, Calendar, Popover, HeaderBar, IconSize, SpinButton, Adjustment};
 use gtk::glib;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::state::{AppState};
 use crate::domain::TaskStatus;
-use chrono::{Local, Utc, TimeZone};
+use chrono::{Local, Utc, TimeZone, Timelike};
 
 pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::Widget, impl Fn()) {
     let container = Box::new(Orientation::Vertical, 0);
@@ -57,6 +57,13 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
     content_box.set_margin_start(12);
     content_box.set_margin_end(12);
     
+    // List Header (Active Filter Name)
+    let list_header = Label::new(Some("Inbox"));
+    list_header.set_xalign(0.0);
+    list_header.style_context().add_class("title-1"); // Large title
+    list_header.set_margin_bottom(16);
+    content_box.pack_start(&list_header, false, false, 0);
+
     // Add Task Input Area
     let input_box = Box::new(Orientation::Horizontal, 8);
     input_box.style_context().add_class("card");
@@ -70,22 +77,86 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
     let date_btn = MenuButton::new();
     date_btn.set_image(Some(&Image::from_icon_name(Some("x-office-calendar-symbolic"), IconSize::Button)));
     
-    let calendar = Calendar::new();
     let date_popover = Popover::new(Some(&date_btn));
-    date_popover.add(&calendar);
-    calendar.show();
+    let date_box = Box::new(Orientation::Vertical, 8);
+    date_box.set_margin_top(8); date_box.set_margin_bottom(8); date_box.set_margin_start(8); date_box.set_margin_end(8);
+    
+    let calendar = Calendar::new();
+    date_box.pack_start(&calendar, false, false, 0);
+    
+    let time_box = Box::new(Orientation::Horizontal, 4);
+    time_box.set_halign(gtk::Align::Center);
+    let time_label = Label::new(Some("Time:"));
+    
+    let hour_adj = Adjustment::new(12.0, 0.0, 23.0, 1.0, 10.0, 0.0);
+    let hour_spin = SpinButton::new(Some(&hour_adj), 1.0, 0);
+    hour_spin.set_wrap(true);
+    hour_spin.set_width_chars(2);
+    
+    let min_adj = Adjustment::new(0.0, 0.0, 59.0, 1.0, 10.0, 0.0);
+    let min_spin = SpinButton::new(Some(&min_adj), 1.0, 0);
+    min_spin.set_wrap(true);
+    min_spin.set_width_chars(2);
+    
+    time_box.pack_start(&time_label, false, false, 4);
+    time_box.pack_start(&hour_spin, false, false, 0);
+    time_box.pack_start(&Label::new(Some(":")), false, false, 2);
+    time_box.pack_start(&min_spin, false, false, 0);
+    
+    date_box.pack_start(&time_box, false, false, 0);
+    date_box.show_all();
+    date_popover.add(&date_box);
     date_btn.set_popover(Some(&date_popover));
     
     let selected_date = Rc::new(RefCell::new(None::<chrono::DateTime<Utc>>));
+    
+    // Set default spins to current time
+    let now = Local::now();
+    hour_spin.set_value(now.hour() as f64);
+    min_spin.set_value(now.minute() as f64);
+    
     let selected_date_clone = selected_date.clone();
     let date_btn_clone = date_btn.clone();
-    
-    calendar.connect_day_selected(move |cal| {
+
+    // Helper to update selected_date
+    let update_date = Rc::new(move |cal: &Calendar, h_spin: &SpinButton, m_spin: &SpinButton| {
         let (year, month, day) = cal.date(); 
-        let naive = chrono::NaiveDate::from_ymd_opt(year as i32, month + 1, day).unwrap(); // month is 0-based in GTK3
-        let dt = Utc.from_utc_datetime(&naive.and_hms_opt(12, 0, 0).unwrap());
-        *selected_date_clone.borrow_mut() = Some(dt);
-        date_btn_clone.style_context().add_class("suggested-action");
+        let h = h_spin.value() as u32;
+        let m = m_spin.value() as u32;
+        
+        if let Some(naive_date) = chrono::NaiveDate::from_ymd_opt(year as i32, month + 1, day) {
+            if let Some(naive_dt) = naive_date.and_hms_opt(h, m, 0) {
+                 // Convert to UTC
+                 match Local.from_local_datetime(&naive_dt) {
+                    chrono::LocalResult::Single(local_dt) => {
+                        *selected_date_clone.borrow_mut() = Some(local_dt.with_timezone(&Utc));
+                        date_btn_clone.style_context().add_class("suggested-action");
+                    },
+                    _ => {} // Ambiguous or invalid time (DST transition), ignore or default
+                 }
+            }
+        }
+    });
+    
+    let update_clone1 = update_date.clone();
+    let h_clone = hour_spin.clone();
+    let m_clone = min_spin.clone();
+    calendar.connect_day_selected(move |cal| {
+        update_clone1(cal, &h_clone, &m_clone);
+    });
+    
+    let update_clone2 = update_date.clone();
+    let cal_clone2 = calendar.clone();
+    let m_clone2 = min_spin.clone();
+    hour_spin.connect_value_changed(move |h_spin| {
+        update_clone2(&cal_clone2, h_spin, &m_clone2);
+    });
+
+    let update_clone3 = update_date.clone();
+    let cal_clone3 = calendar.clone();
+    let h_clone3 = hour_spin.clone();
+    min_spin.connect_value_changed(move |m_spin| {
+        update_clone3(&cal_clone3, &h_clone3, m_spin);
     });
 
     let add_btn = Button::with_label("Add");
@@ -140,6 +211,7 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
     let state_clone = state.clone();
     let refresh_all_clone = refresh_all.clone();
     let task_list_box_clone = task_list_box.clone();
+    let list_header_clone = list_header.clone();
 
     let refresh = move || {
         for child in task_list_box_clone.children() {
@@ -147,6 +219,27 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
         }
 
         let s = state_clone.borrow();
+        
+        // Update Header
+        let (title_text, color) = match &s.active_filter {
+            crate::state::Filter::Inbox => ("Inbox".to_string(), None),
+            crate::state::Filter::Today => ("Today".to_string(), None),
+            crate::state::Filter::Upcoming => ("Upcoming".to_string(), None),
+            crate::state::Filter::Project(id) => {
+                if let Some(p) = s.projects.iter().find(|p| p.id == Some(*id)) {
+                    (p.name.clone(), Some(p.color.clone()))
+                } else {
+                    ("Unknown Project".to_string(), None)
+                }
+            }
+        };
+        
+        if let Some(c) = color {
+             list_header_clone.set_markup(&format!("<span foreground=\"{}\">{}</span>", c, glib::markup_escape_text(&title_text)));
+        } else {
+             list_header_clone.set_text(&title_text);
+        }
+
         let tasks = s.filtered_tasks();
 
         for task in tasks {
@@ -160,6 +253,7 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
             // Checkbox
             let check = CheckButton::new();
             check.set_active(task.status == TaskStatus::Done);
+            check.set_valign(gtk::Align::Center); // Align to center
             let tid = task.id.unwrap();
             let s_clone = state_clone.clone();
             let r_clone = refresh_all_clone.clone();
@@ -171,30 +265,39 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
             });
             b.pack_start(&check, false, false, 0);
 
-            // Title
+            // Title and Date VBox
+            let v_box = Box::new(Orientation::Vertical, 2);
+            v_box.set_hexpand(true);
+            v_box.set_valign(gtk::Align::Center);
+
             let title = Label::new(Some(&task.title));
-            title.set_hexpand(true);
             title.set_xalign(0.0);
             if task.status == TaskStatus::Done {
                 title.style_context().add_class("dim-label");
                 title.set_markup(&format!("<s>{}</s>", glib::markup_escape_text(&task.title)));
             }
-            b.pack_start(&title, true, true, 0);
+            v_box.pack_start(&title, false, false, 0);
 
             // Date
             if let Some(date) = task.due_date {
                 let local = date.with_timezone(&Local);
-                let date_str = local.format("%b %d").to_string();
+                let date_str = local.format("%b %d %Y at %l:%M %p").to_string();
                 let date_lbl = Label::new(Some(&date_str));
                 date_lbl.style_context().add_class("dim-label");
-                b.pack_start(&date_lbl, false, false, 0);
+                // Use a smaller font or box if needed. GTK "dim-label" is usually enough.
+                // To make it look like a badge, we could wrap it in a box with bg, but text is fine as per inspo.
+                date_lbl.set_xalign(0.0);
+                v_box.pack_start(&date_lbl, false, false, 0);
             }
+            
+            b.pack_start(&v_box, true, true, 0);
 
             // Edit
             let edit_menu_btn = MenuButton::new();
             edit_menu_btn.set_image(Some(&Image::from_icon_name(Some("document-edit-symbolic"), IconSize::Button)));
             edit_menu_btn.style_context().add_class("flat");
             edit_menu_btn.style_context().add_class("circular");
+            edit_menu_btn.set_valign(gtk::Align::Center);
             
             let popover = Popover::new(Some(&edit_menu_btn));
             let pop_box = Box::new(Orientation::Horizontal, 4);
@@ -231,6 +334,7 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
             let del_btn = Button::from_icon_name(Some("user-trash-symbolic"), IconSize::Button);
             del_btn.style_context().add_class("flat");
             del_btn.style_context().add_class("circular");
+            del_btn.set_valign(gtk::Align::Center);
             let s_clone_del = state_clone.clone();
             let r_clone_del = refresh_all_clone.clone();
             

@@ -1,10 +1,11 @@
 use gtk::prelude::*;
 use gtk::{Box, Button, Entry, Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Image, Popover, GestureMultiPress, Window};
+use gtk::gdk;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::state::{AppState, Filter};
 use crate::config::Config;
-use crate::ui::{preferences, icons};
+use crate::ui::preferences;
 
 pub fn build(
     state: Rc<RefCell<AppState>>, 
@@ -29,11 +30,7 @@ pub fn build(
     app_label.set_xalign(0.0);
 
     let settings_btn = Button::new();
-    if let Some(pixbuf) = icons::get_icon_pixbuf("settings", 16) {
-        settings_btn.set_image(Some(&Image::from_pixbuf(Some(&pixbuf))));
-    } else {
-        settings_btn.set_label("S");
-    }
+    settings_btn.set_image(Some(&Image::from_icon_name(Some("emblem-system-symbolic"), gtk::IconSize::Button)));
     settings_btn.style_context().add_class("flat");
     settings_btn.style_context().add_class("circular");
     settings_btn.set_tooltip_text(Some("Settings"));
@@ -67,11 +64,7 @@ pub fn build(
     new_project_entry.set_hexpand(true);
     
     let add_btn = Button::new();
-    if let Some(pixbuf) = icons::get_icon_pixbuf("plus", 16) {
-        add_btn.set_image(Some(&Image::from_pixbuf(Some(&pixbuf))));
-    } else {
-        add_btn.set_label("+");
-    }
+    add_btn.set_image(Some(&Image::from_icon_name(Some("list-add-symbolic"), gtk::IconSize::Button)));
     // Remove "flat" to give it a button shape if desired, or keep flat but ensure size
     // User said "Add button is too short". Usually implies width or visual presence.
     // Let's keep it standard button style (not flat) to match the "box" look request?
@@ -127,7 +120,7 @@ pub fn build(
         let s = state_clone.borrow();
         let active = s.active_filter.clone();
 
-        let add_item = |label: &str, icon_name: &str, filter: Filter| {
+        let add_item = |label: &str, icon_name: &str, color_hex: Option<&str>, filter: Filter| {
             let row = ListBoxRow::new();
             // We want "boxed" look. ListBoxRow can be styled.
             // But we can also add a margin to the child box to make it look like a separated card.
@@ -142,11 +135,20 @@ pub fn build(
             b.set_margin_start(12);
             b.set_margin_end(12);
             
-            let icon_pixbuf = icons::get_icon_pixbuf(icon_name, 18);
-            let icon = if let Some(pb) = icon_pixbuf {
-                Image::from_pixbuf(Some(&pb))
+            let icon: gtk::Widget = if let Some(hex) = color_hex {
+                let drawing = gtk::DrawingArea::new();
+                drawing.set_size_request(18, 18);
+                let hex_string = hex.to_string();
+                drawing.connect_draw(move |_, ctx| {
+                     let color = gdk::RGBA::parse(&hex_string).unwrap_or(gdk::RGBA::new(0.2, 0.2, 0.2, 1.0));
+                     ctx.set_source_rgba(color.red(), color.green(), color.blue(), 1.0);
+                     ctx.arc(9.0, 9.0, 6.0, 0.0, 2.0 * std::f64::consts::PI);
+                     ctx.fill();
+                     gtk::glib::Propagation::from(false)
+                });
+                drawing.upcast()
             } else {
-                Image::from_icon_name(Some("image-missing"), gtk::IconSize::Button)
+                Image::from_icon_name(Some(icon_name), gtk::IconSize::Menu).upcast()
             };
 
             let lbl = Label::new(Some(label));
@@ -183,12 +185,12 @@ pub fn build(
             if let Filter::Project(pid) = filter {
                 // Edit/Delete buttons logic (simplified for brevity, same as before but using lucide)
                  let edit_btn = Button::new();
-                 if let Some(pb) = icons::get_icon_pixbuf("pencil", 14) { edit_btn.set_image(Some(&Image::from_pixbuf(Some(&pb)))); }
+                 edit_btn.set_image(Some(&Image::from_icon_name(Some("document-edit-symbolic"), gtk::IconSize::Menu)));
                  edit_btn.style_context().add_class("flat");
                  edit_btn.style_context().add_class("circular");
                  
                  let del_btn = Button::new();
-                 if let Some(pb) = icons::get_icon_pixbuf("trash-2", 14) { del_btn.set_image(Some(&Image::from_pixbuf(Some(&pb)))); }
+                 del_btn.set_image(Some(&Image::from_icon_name(Some("user-trash-symbolic"), gtk::IconSize::Menu)));
                  del_btn.style_context().add_class("flat");
                  del_btn.style_context().add_class("circular");
 
@@ -212,9 +214,7 @@ pub fn build(
                  popover.add(&pop_box);
                  
                  let edit_menu_btn = gtk::MenuButton::new();
-                 if let Some(pb) = icons::get_icon_pixbuf("pencil", 14) { 
-                     edit_menu_btn.set_image(Some(&Image::from_pixbuf(Some(&pb)))); 
-                 }
+                 edit_menu_btn.set_image(Some(&Image::from_icon_name(Some("document-edit-symbolic"), gtk::IconSize::Menu)));
                  edit_menu_btn.set_popover(Some(&popover));
                  edit_menu_btn.style_context().add_class("flat");
                  edit_menu_btn.style_context().add_class("circular");
@@ -243,9 +243,9 @@ pub fn build(
             }
         };
 
-        add_item("Inbox", "inbox", Filter::Inbox);
-        add_item("Today", "calendar", Filter::Today);
-        add_item("Upcoming", "calendar-days", Filter::Upcoming); // Using "calendar-days" as icon
+        add_item("Inbox", "mail-inbox-symbolic", None, Filter::Inbox);
+        add_item("Today", "go-today-symbolic", None, Filter::Today);
+        add_item("Upcoming", "x-office-calendar-symbolic", None, Filter::Upcoming); // Using "calendar-days" as icon
 
         let sep_box = Box::new(Orientation::Horizontal, 0);
         sep_box.set_margin_top(12);
@@ -263,7 +263,7 @@ pub fn build(
         nav_list_clone.add(&row_sep);
 
         for proj in &s.projects {
-            add_item(&proj.name, "folder", Filter::Project(proj.id.unwrap()));
+            add_item(&proj.name, "folder-symbolic", Some(&proj.color), Filter::Project(proj.id.unwrap()));
         }
         
         nav_list_clone.show_all();
