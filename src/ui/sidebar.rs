@@ -244,7 +244,7 @@ pub fn build(
         };
 
         add_item("Inbox", "mail-inbox-symbolic", None, Filter::Inbox);
-        add_item("Today", "go-today-symbolic", None, Filter::Today);
+        add_item("Today", "appointment-soon-symbolic", None, Filter::Today);
         add_item("Upcoming", "x-office-calendar-symbolic", None, Filter::Upcoming); // Using "calendar-days" as icon
 
         let sep_box = Box::new(Orientation::Horizontal, 0);

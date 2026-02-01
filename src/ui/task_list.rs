@@ -234,11 +234,12 @@ pub fn build(state: Rc<RefCell<AppState>>, refresh_all: Rc<dyn Fn()>) -> (gtk::W
             }
         };
         
-        if let Some(c) = color {
-             list_header_clone.set_markup(&format!("<span foreground=\"{}\">{}</span>", c, glib::markup_escape_text(&title_text)));
+        let markup = if let Some(c) = color {
+             format!("<span foreground=\"{}\">{}</span>", c, glib::markup_escape_text(&title_text))
         } else {
-             list_header_clone.set_text(&title_text);
-        }
+             glib::markup_escape_text(&title_text).to_string()
+        };
+        list_header_clone.set_markup(&markup);
 
         let tasks = s.filtered_tasks();
 
