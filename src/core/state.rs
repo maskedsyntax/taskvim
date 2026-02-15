@@ -1,6 +1,7 @@
 use crate::domain::{Task, TaskStatus};
 use crate::storage::SqliteStorage;
 use crate::error::Result;
+use crate::config::lua::Config;
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -42,10 +43,11 @@ pub struct AppState {
     pub pending_g: bool,
     pub selection_anchor: Option<usize>,
     pub editing_task_id: Option<Uuid>,
+    pub config: Config,
 }
 
 impl AppState {
-    pub fn new(storage: SqliteStorage) -> Result<Self> {
+    pub fn new(storage: SqliteStorage, config: Config) -> Result<Self> {
         let tasks = storage.get_tasks(None)?;
         Ok(Self {
             tasks,
@@ -60,6 +62,7 @@ impl AppState {
             pending_g: false,
             selection_anchor: None,
             editing_task_id: None,
+            config,
         })
     }
 
@@ -78,6 +81,7 @@ impl AppState {
 
     pub fn add_task(&mut self, title: String) -> Result<()> {
         let mut task = Task::new(title);
+        task.priority = self.config.default_priority;
         task.position = self.tasks.iter().map(|t| t.position).max().unwrap_or(0) + 1;
         self.storage.save_task(&task)?;
         self.reload_tasks()?;
@@ -96,6 +100,7 @@ impl AppState {
         }
 
         let mut new_task = Task::new(title);
+        new_task.priority = self.config.default_priority;
         new_task.position = current_pos + 1;
         self.storage.save_task(&new_task)?;
         self.reload_tasks()?;
@@ -115,6 +120,7 @@ impl AppState {
         }
 
         let mut new_task = Task::new(title);
+        new_task.priority = self.config.default_priority;
         new_task.position = current_pos;
         self.storage.save_task(&new_task)?;
         self.reload_tasks()?;

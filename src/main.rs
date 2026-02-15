@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let storage = SqliteStorage::new("taskvim.db")?;
     
     // Initialize app state
-    let mut state = AppState::new(storage)?;
+    let mut state = AppState::new(storage, lua_config.get_config())?;
     
     // Initialize and run TUI
     let mut tui = Tui::new()?;

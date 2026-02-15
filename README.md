@@ -97,11 +97,20 @@ Example:
 TaskVim can be configured using Lua. Create a configuration file at:
 `~/.config/taskvim/init.lua` (Linux/macOS)
 
-Example configuration:
+### Settings
+
+- `set.theme("theme_name")`: Set the UI theme.
+- `set.default_priority(number)`: Set the default priority for new tasks (1-5).
+- `set.sidebar(boolean)`: Show or hide the sidebar.
+
+### Example configuration
 
 ```lua
 set.theme("gruvbox")
+set.default_priority(3)
+set.sidebar(true)
 
+-- Keymaps (WIP)
 map("n", "dd", "delete_task")
 ```
 
