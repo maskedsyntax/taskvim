@@ -1,6 +1,5 @@
-use mlua::{Lua, Table};
+use mlua::Lua;
 use crate::error::Result;
-use std::path::PathBuf;
 use directories::ProjectDirs;
 
 pub struct LuaConfig {
