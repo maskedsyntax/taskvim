@@ -1,6 +1,7 @@
-use crate::domain::Task;
+use crate::domain::{Task, TaskStatus};
 use crate::storage::SqliteStorage;
 use crate::error::Result;
+use chrono::Utc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -11,13 +12,30 @@ pub enum Mode {
     Filter,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortBy {
+    Position,
+    Priority,
+    CreatedAt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertAction {
+    AddEnd,
+    AddBelow,
+    AddAbove,
+}
+
 pub struct AppState {
     pub tasks: Vec<Task>,
     pub selected_index: usize,
     pub mode: Mode,
+    pub insert_action: InsertAction,
     pub command_buffer: String,
     pub storage: SqliteStorage,
     pub running: bool,
+    pub sort_by: SortBy,
+    pub pending_g: bool,
 }
 
 impl AppState {
@@ -27,14 +45,22 @@ impl AppState {
             tasks,
             selected_index: 0,
             mode: Mode::Normal,
+            insert_action: InsertAction::AddEnd,
             command_buffer: String::new(),
             storage,
             running: true,
+            sort_by: SortBy::Position,
+            pending_g: false,
         })
     }
 
     pub fn reload_tasks(&mut self) -> Result<()> {
         self.tasks = self.storage.get_tasks()?;
+        match self.sort_by {
+            SortBy::Position => self.tasks.sort_by_key(|t| t.position),
+            SortBy::Priority => self.tasks.sort_by_key(|t| -t.priority),
+            SortBy::CreatedAt => self.tasks.sort_by_key(|t| t.created_at),
+        }
         if self.selected_index >= self.tasks.len() && !self.tasks.is_empty() {
             self.selected_index = self.tasks.len() - 1;
         }
@@ -42,8 +68,46 @@ impl AppState {
     }
 
     pub fn add_task(&mut self, title: String) -> Result<()> {
-        let task = Task::new(title);
+        let mut task = Task::new(title);
+        task.position = self.tasks.iter().map(|t| t.position).max().unwrap_or(0) + 1;
         self.storage.save_task(&task)?;
+        self.reload_tasks()?;
+        Ok(())
+    }
+
+    pub fn add_task_below(&mut self, title: String) -> Result<()> {
+        let current_pos = self.tasks.get(self.selected_index).map(|t| t.position).unwrap_or(0);
+        
+        // Shift all tasks after current_pos
+        for task in self.tasks.iter_mut() {
+            if task.position > current_pos {
+                task.position += 1;
+                self.storage.save_task(task)?;
+            }
+        }
+
+        let mut new_task = Task::new(title);
+        new_task.position = current_pos + 1;
+        self.storage.save_task(&new_task)?;
+        self.reload_tasks()?;
+        self.selected_index += 1;
+        Ok(())
+    }
+
+    pub fn add_task_above(&mut self, title: String) -> Result<()> {
+        let current_pos = self.tasks.get(self.selected_index).map(|t| t.position).unwrap_or(0);
+        
+        // Shift all tasks starting from current_pos
+        for task in self.tasks.iter_mut() {
+            if task.position >= current_pos {
+                task.position += 1;
+                self.storage.save_task(task)?;
+            }
+        }
+
+        let mut new_task = Task::new(title);
+        new_task.position = current_pos;
+        self.storage.save_task(&new_task)?;
         self.reload_tasks()?;
         Ok(())
     }
@@ -51,6 +115,43 @@ impl AppState {
     pub fn delete_selected_task(&mut self) -> Result<()> {
         if let Some(task) = self.tasks.get(self.selected_index) {
             self.storage.delete_task(task.id)?;
+            self.reload_tasks()?;
+        }
+        Ok(())
+    }
+
+    pub fn increase_priority(&mut self) -> Result<()> {
+        if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
+            if task.priority < 5 {
+                task.priority += 1;
+                self.storage.save_task(&task)?;
+                self.reload_tasks()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn decrease_priority(&mut self) -> Result<()> {
+        if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
+            if task.priority > 1 {
+                task.priority -= 1;
+                self.storage.save_task(&task)?;
+                self.reload_tasks()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn cycle_status(&mut self) -> Result<()> {
+        if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
+            task.status = match task.status {
+                TaskStatus::Todo => TaskStatus::Doing,
+                TaskStatus::Doing => TaskStatus::Done,
+                TaskStatus::Done => TaskStatus::Archived,
+                TaskStatus::Archived => TaskStatus::Todo,
+            };
+            task.updated_at = Utc::now();
+            self.storage.save_task(&task)?;
             self.reload_tasks()?;
         }
         Ok(())
@@ -66,5 +167,53 @@ impl AppState {
         if !self.tasks.is_empty() && self.selected_index < self.tasks.len() - 1 {
             self.selected_index += 1;
         }
+    }
+
+    pub fn move_to_top(&mut self) {
+        self.selected_index = 0;
+    }
+
+    pub fn move_to_bottom(&mut self) {
+        if !self.tasks.is_empty() {
+            self.selected_index = self.tasks.len() - 1;
+        }
+    }
+
+    pub fn page_down(&mut self) {
+        self.selected_index = (self.selected_index + 10).min(self.tasks.len().saturating_sub(1));
+    }
+
+    pub fn page_up(&mut self) {
+        self.selected_index = self.selected_index.saturating_sub(10);
+    }
+
+    pub fn execute_command(&mut self, cmd: &str) -> Result<()> {
+        match cmd {
+            "q" => self.running = false,
+            "wq" => {
+                self.running = false;
+            }
+            "w" => {
+                // Already persisted on every change for now, but could be batched later
+            }
+            "sort priority" => {
+                self.sort_by = SortBy::Priority;
+                self.reload_tasks()?;
+            }
+            "sort created" => {
+                self.sort_by = SortBy::CreatedAt;
+                self.reload_tasks()?;
+            }
+            "sort position" => {
+                self.sort_by = SortBy::Position;
+                self.reload_tasks()?;
+            }
+            _ => {
+                if cmd.starts_with("filter ") {
+                    // TODO: Implement filtering
+                }
+            }
+        }
+        Ok(())
     }
 }

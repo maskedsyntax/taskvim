@@ -1,59 +1,68 @@
-# TaskIt
+# TaskVim
 
-A sleek and modern GUI Task Tracker built with Rust and GTK3.
+A modal, keyboard-first, high-performance terminal task manager written in Rust, inspired by Vim and Neovim.
 
 ## Features
 
-- **Local-First**: All data is stored locally in a SQLite database.
-- **Task Management**: Create, edit, delete, and toggle tasks.
-- **Project Management**: Organize tasks into projects with full CRUD support.
-- **Date Support**: Set due dates for tasks using an integrated calendar picker.
-- **Dynamic Views**:
-  - **Inbox**: Tasks without a project.
-  - **Today**: Tasks due today.
-  - **Upcoming**: Future tasks.
-  - **Project View**: Filter tasks by project.
-- **Search**: Quickly find tasks with the real-time search bar.
-- **Theme Support**: Seamlessly toggle between Light and Dark modes.
-- **Modern UI**: Clean design using standard system symbolic icons.
-
-## Architecture
-
-- **Language**: Rust
-- **Framework**: GTK3
-- **Database**: SQLite (via `rusqlite`)
-- **State Management**: Manual state refresh pattern for robust UI updates.
+- Modal editing (Normal, Insert, Visual, Command modes)
+- SQLite backend for reliable storage
+- Scriptable configuration via Lua
+- Filtering DSL for complex task queries
+- High performance, designed to handle thousands of tasks
 
 ## Installation
 
 ### Prerequisites
 
-Ensure you have the following system dependencies installed:
+- Rust (stable)
+- SQLite3
+
+### Build from source
 
 ```bash
-# Ubuntu/Debian
-sudo apt install libgtk-3-dev
+git clone https://github.com/maskedsyntax/taskvim
+cd taskvim
+cargo build --release
 ```
 
-### Build and Run
-
-```bash
-# Clone the repository
-git clone https://github.com/maskedsyntax/taskit.git
-cd taskit
-
-# Run the application
-cargo run
-```
+The binary will be available at `target/release/taskvim`.
 
 ## Usage
 
-- **Add Task**: Type a title in the input box, select an optional date, and press "Enter" or click "Add".
-- **Edit Task/Project**: Click the pencil icon to open a rename popover.
-- **Delete**: Click the trash icon to remove an item.
-- **Search**: Use the search bar in the header to filter tasks by title.
-- **Theme**: Click the sun/moon icon in the header to toggle themes.
+Run the application:
+
+```bash
+taskvim
+```
+
+### Modes
+
+- **Normal Mode**: Navigate and manage tasks.
+- **Insert Mode**: Add or edit tasks.
+- **Command Mode**: Execute commands using `:`.
+
+### Keybindings (Default)
+
+- `j` / `k`: Navigate up/down
+- `i`: Enter Insert Mode (Add new task)
+- `d`: Delete selected task
+- `:`: Enter Command Mode
+- `Esc`: Return to Normal Mode
+- `q`: Quit
+
+## Configuration
+
+TaskVim can be configured using Lua. Create a configuration file at:
+`~/.config/taskvim/init.lua` (Linux/macOS)
+
+Example configuration:
+
+```lua
+set.theme("gruvbox")
+
+map("n", "dd", "delete_task")
+```
 
 ## License
 
-GPL-3.0
+MIT
