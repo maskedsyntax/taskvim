@@ -2,6 +2,7 @@ use crate::domain::{Task, TaskStatus};
 use crate::storage::SqliteStorage;
 use crate::error::Result;
 use chrono::Utc;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -35,12 +36,14 @@ pub struct AppState {
     pub storage: SqliteStorage,
     pub running: bool,
     pub sort_by: SortBy,
+    pub filter_string: Option<String>,
     pub pending_g: bool,
+    pub selection_anchor: Option<usize>,
 }
 
 impl AppState {
     pub fn new(storage: SqliteStorage) -> Result<Self> {
-        let tasks = storage.get_tasks()?;
+        let tasks = storage.get_tasks(None)?;
         Ok(Self {
             tasks,
             selected_index: 0,
@@ -50,12 +53,14 @@ impl AppState {
             storage,
             running: true,
             sort_by: SortBy::Position,
+            filter_string: None,
             pending_g: false,
+            selection_anchor: None,
         })
     }
 
     pub fn reload_tasks(&mut self) -> Result<()> {
-        self.tasks = self.storage.get_tasks()?;
+        self.tasks = self.storage.get_tasks(self.filter_string.as_deref())?;
         match self.sort_by {
             SortBy::Position => self.tasks.sort_by_key(|t| t.position),
             SortBy::Priority => self.tasks.sort_by_key(|t| -t.priority),
@@ -113,9 +118,39 @@ impl AppState {
     }
 
     pub fn delete_selected_task(&mut self) -> Result<()> {
-        if let Some(task) = self.tasks.get(self.selected_index) {
-            self.storage.delete_task(task.id)?;
+        if self.mode == Mode::Visual {
+            self.delete_visual_selection()?;
+            self.mode = Mode::Normal;
+            self.selection_anchor = None;
+        } else {
+            if let Some(task) = self.tasks.get(self.selected_index) {
+                self.storage.delete_task(task.id)?;
+                self.reload_tasks()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn delete_visual_selection(&mut self) -> Result<()> {
+        if let Some(anchor) = self.selection_anchor {
+            let start = anchor.min(self.selected_index);
+            let end = anchor.max(self.selected_index);
+            
+            // Collect IDs first to avoid index shifting issues during deletion if we were modifying in-place
+            // But we are deleting from DB, so it's fine.
+            let ids_to_delete: Vec<Uuid> = self.tasks[start..=end].iter().map(|t| t.id).collect();
+            
+            for id in ids_to_delete {
+                self.storage.delete_task(id)?;
+            }
             self.reload_tasks()?;
+            
+            // Adjust selection
+            if self.selected_index >= self.tasks.len() && !self.tasks.is_empty() {
+                self.selected_index = self.tasks.len() - 1;
+            } else if self.tasks.is_empty() {
+                self.selected_index = 0;
+            }
         }
         Ok(())
     }
@@ -210,7 +245,16 @@ impl AppState {
             }
             _ => {
                 if cmd.starts_with("filter ") {
-                    // TODO: Implement filtering
+                    let filter_part = &cmd[7..];
+                    if filter_part.trim().is_empty() {
+                         self.filter_string = None;
+                    } else {
+                         self.filter_string = Some(filter_part.to_string());
+                    }
+                    self.reload_tasks()?;
+                } else if cmd == "filter" {
+                     self.filter_string = None;
+                     self.reload_tasks()?;
                 }
             }
         }

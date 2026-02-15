@@ -1,4 +1,5 @@
 use crate::domain::{Task, TaskStatus};
+use crate::domain::query::Filter;
 use crate::error::Result;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
@@ -94,7 +95,7 @@ impl SqliteStorage {
                 task.description,
                 task.status.to_string(),
                 task.priority,
-                task.due_date.map(|d| d.to_rfc3339()),
+                task.due_date.map(|d: DateTime<Utc>| d.to_rfc3339()),
                 task.created_at.to_rfc3339(),
                 task.updated_at.to_rfc3339(),
                 task.project,
@@ -123,16 +124,38 @@ impl SqliteStorage {
         for dep_id in &task.dependencies {
             self.conn.execute(
                 "INSERT INTO dependencies (task_id, depends_on) VALUES (?, ?)",
-                params![task.id.to_string(), dep_id.to_string()],
+                params![task.id.to_string(), dep_id.to_string() as String],
             )?;
         }
 
         Ok(())
     }
 
-    pub fn get_tasks(&self) -> Result<Vec<Task>> {
-        let mut stmt = self.conn.prepare("SELECT * FROM tasks ORDER BY position ASC, created_at DESC")?;
-        let task_iter = stmt.query_map([], |row| {
+    pub fn get_tasks(&self, filter_string: Option<&str>) -> Result<Vec<Task>> {
+        let mut sql = "SELECT * FROM tasks".to_string();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        
+        if let Some(s) = filter_string {
+            if !s.trim().is_empty() {
+                 let filters = Filter::parse(s)?;
+                 if !filters.is_empty() {
+                     sql.push_str(" WHERE ");
+                     let mut conditions = Vec::new();
+                     for filter in filters {
+                         let (cond, val): (String, String) = filter.to_sql_condition()?;
+                         conditions.push(cond);
+                         params.push(Box::new(val));
+                     }
+                     sql.push_str(&conditions.join(" AND "));
+                 }
+            }
+        }
+        
+        sql.push_str(" ORDER BY position ASC, created_at DESC");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        
+        let task_iter = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
             let id_str: String = row.get(0)?;
             let id = Uuid::parse_str(&id_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
             
@@ -153,8 +176,8 @@ impl SqliteStorage {
                 project: row.get(8)?,
                 recurrence_rule: row.get(9)?,
                 position: row.get(10)?,
-                tags: Vec::new(), // Will fill below
-                dependencies: Vec::new(), // Will fill below
+                tags: Vec::new(),
+                dependencies: Vec::new(),
             })
         })?;
 

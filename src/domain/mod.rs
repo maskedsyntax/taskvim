@@ -1,3 +1,7 @@
+pub mod query;
+#[cfg(test)]
+mod tests;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

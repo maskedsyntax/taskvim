@@ -85,6 +85,34 @@ impl Tui {
                             KeyCode::Enter => {
                                 state.cycle_status()?;
                             }
+                            KeyCode::Char('v') => {
+                                state.mode = Mode::Visual;
+                                state.selection_anchor = Some(state.selected_index);
+                            }
+                            _ => { handled = false; }
+                        },
+                        Mode::Visual => match key.code {
+                            KeyCode::Char('v') | KeyCode::Esc => {
+                                state.mode = Mode::Normal;
+                                state.selection_anchor = None;
+                            }
+                            KeyCode::Char('j') => state.move_selection_down(),
+                            KeyCode::Char('k') => state.move_selection_up(),
+                            KeyCode::Char('d') => {
+                                state.delete_selected_task()?;
+                                state.mode = Mode::Normal;
+                                state.selection_anchor = None;
+                            }
+                            KeyCode::Char('G') => state.move_to_bottom(),
+                            KeyCode::Char('g') => {
+                                if state.pending_g {
+                                    state.move_to_top();
+                                    state.pending_g = false;
+                                } else {
+                                    state.pending_g = true;
+                                    handled = false;
+                                }
+                            }
                             _ => { handled = false; }
                         },
                         Mode::Insert => match key.code {
@@ -161,7 +189,19 @@ fn ui(f: &mut ratatui::Frame, state: &AppState) {
         .bottom_margin(1);
 
     let rows = state.tasks.iter().enumerate().map(|(i, task)| {
-        let style = if i == state.selected_index {
+        let is_selected = if state.mode == Mode::Visual {
+            if let Some(anchor) = state.selection_anchor {
+                let start = anchor.min(state.selected_index);
+                let end = anchor.max(state.selected_index);
+                i >= start && i <= end
+            } else {
+                i == state.selected_index
+            }
+        } else {
+            i == state.selected_index
+        };
+
+        let style = if is_selected {
             Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
