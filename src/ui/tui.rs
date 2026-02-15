@@ -9,7 +9,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph, Table, Row, Cell},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Table, Row, Cell},
     Terminal,
 };
 use std::io;
@@ -57,6 +57,14 @@ impl Tui {
                                 state.page_up();
                             }
                             KeyCode::Char('i') => {
+                                if state.tasks.is_empty() {
+                                    state.mode = Mode::Insert;
+                                    state.insert_action = crate::core::state::InsertAction::AddEnd;
+                                } else {
+                                    state.start_editing();
+                                }
+                            }
+                            KeyCode::Char('a') => {
                                 state.mode = Mode::Insert;
                                 state.insert_action = crate::core::state::InsertAction::AddEnd;
                             }
@@ -115,6 +123,10 @@ impl Tui {
                             }
                             _ => { handled = false; }
                         },
+                        Mode::Stats => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => state.mode = Mode::Normal,
+                            _ => { handled = false; }
+                        },
                         Mode::Insert => match key.code {
                             KeyCode::Esc => state.mode = Mode::Normal,
                             KeyCode::Enter => {
@@ -123,6 +135,7 @@ impl Tui {
                                         crate::core::state::InsertAction::AddEnd => state.add_task(state.command_buffer.clone())?,
                                         crate::core::state::InsertAction::AddBelow => state.add_task_below(state.command_buffer.clone())?,
                                         crate::core::state::InsertAction::AddAbove => state.add_task_above(state.command_buffer.clone())?,
+                                        crate::core::state::InsertAction::Edit => state.commit_edit()?,
                                     }
                                     state.command_buffer.clear();
                                     state.mode = Mode::Normal;
@@ -180,68 +193,100 @@ fn ui(f: &mut ratatui::Frame, state: &AppState) {
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(f.size());
 
-    let header_cells = ["ID", "Status", "Priority", "Title", "Project"]
-        .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
-    let header = Row::new(header_cells)
-        .style(Style::default().bg(Color::Blue))
-        .height(1)
-        .bottom_margin(1);
-
-    let rows = state.tasks.iter().enumerate().map(|(i, task)| {
-        let is_selected = if state.mode == Mode::Visual {
-            if let Some(anchor) = state.selection_anchor {
-                let start = anchor.min(state.selected_index);
-                let end = anchor.max(state.selected_index);
-                i >= start && i <= end
+    match state.mode {
+        Mode::Stats => {
+            let total = state.tasks.len();
+            let done = state.tasks.iter().filter(|t| t.status == crate::domain::TaskStatus::Done).count();
+            let todo = state.tasks.iter().filter(|t| t.status == crate::domain::TaskStatus::Todo).count();
+            let doing = state.tasks.iter().filter(|t| t.status == crate::domain::TaskStatus::Doing).count();
+            let archived = state.tasks.iter().filter(|t| t.status == crate::domain::TaskStatus::Archived).count();
+            
+            let completion_rate = if total > 0 {
+                (done as f64 / total as f64) * 100.0
             } else {
-                i == state.selected_index
-            }
-        } else {
-            i == state.selected_index
-        };
+                0.0
+            };
 
-        let style = if is_selected {
-            Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        
-        let id_short = &task.id.to_string()[..8];
-        let status = task.status.to_string();
-        let priority = task.priority.to_string();
-        let title = task.title.clone();
-        let project = task.project.clone().unwrap_or_else(|| "-".to_string());
+            let stats_text = vec![
+                ListItem::new(format!("Total Tasks: {}", total)),
+                ListItem::new(format!("Todo: {}", todo)),
+                ListItem::new(format!("Doing: {}", doing)),
+                ListItem::new(format!("Done: {}", done)),
+                ListItem::new(format!("Archived: {}", archived)),
+                ListItem::new(format!("Completion Rate: {:.1}%", completion_rate)),
+            ];
 
-        Row::new(vec![
-            Cell::from(id_short.to_string()),
-            Cell::from(status),
-            Cell::from(priority),
-            Cell::from(title),
-            Cell::from(project),
-        ]).style(style)
-    });
+            let stats_list = List::new(stats_text)
+                .block(Block::default().borders(Borders::ALL).title(" Statistics "));
+            
+            f.render_widget(stats_list, chunks[0]);
+        }
+        _ => {
+            let header_cells = ["ID", "Status", "Priority", "Title", "Project"]
+                .iter()
+                .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+            let header = Row::new(header_cells)
+                .style(Style::default().bg(Color::Blue))
+                .height(1)
+                .bottom_margin(1);
 
-    let task_table = Table::new(
-        rows,
-        [
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Percentage(50),
-            Constraint::Percentage(20),
-        ],
-    )
-    .header(header)
-    .block(Block::default().borders(Borders::ALL).title(" TaskVim "));
-    
-    f.render_widget(task_table, chunks[0]);
+            let rows = state.tasks.iter().enumerate().map(|(i, task)| {
+                let is_selected = if state.mode == Mode::Visual {
+                    if let Some(anchor) = state.selection_anchor {
+                        let start = anchor.min(state.selected_index);
+                        let end = anchor.max(state.selected_index);
+                        i >= start && i <= end
+                    } else {
+                        i == state.selected_index
+                    }
+                } else {
+                    i == state.selected_index
+                };
+
+                let style = if is_selected {
+                    Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                
+                let id_short = &task.id.to_string()[..8];
+                let status = task.status.to_string();
+                let priority = task.priority.to_string();
+                let title = task.title.clone();
+                let project = task.project.clone().unwrap_or_else(|| "-".to_string());
+
+                Row::new(vec![
+                    Cell::from(id_short.to_string()),
+                    Cell::from(status),
+                    Cell::from(priority),
+                    Cell::from(title),
+                    Cell::from(project),
+                ]).style(style)
+            });
+
+            let task_table = Table::new(
+                rows,
+                [
+                    Constraint::Length(10),
+                    Constraint::Length(10),
+                    Constraint::Length(10),
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(20),
+                ],
+            )
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title(" TaskVim "));
+            
+            f.render_widget(task_table, chunks[0]);
+        }
+    }
 
     let status_bar = match state.mode {
         Mode::Normal => Paragraph::new("-- NORMAL --"),
         Mode::Insert => Paragraph::new(format!("-- INSERT -- {}", state.command_buffer)),
         Mode::Command => Paragraph::new(format!(":{}", state.command_buffer)),
         Mode::Visual => Paragraph::new("-- VISUAL --"),
+        Mode::Stats => Paragraph::new("-- STATS --"),
         Mode::Filter => Paragraph::new(format!("-- FILTER -- {}", state.command_buffer)),
     };
     f.render_widget(status_bar, chunks[1]);

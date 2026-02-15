@@ -2,4 +2,4 @@ pub mod state;
 #[cfg(test)]
 mod tests;
 
-pub use state::{AppState, Mode, SortBy};
+pub use state::{AppState, Mode};

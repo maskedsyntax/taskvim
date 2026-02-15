@@ -11,6 +11,7 @@ pub enum Mode {
     Visual,
     Command,
     Filter,
+    Stats,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub enum InsertAction {
     AddEnd,
     AddBelow,
     AddAbove,
+    Edit,
 }
 
 pub struct AppState {
@@ -39,6 +41,7 @@ pub struct AppState {
     pub filter_string: Option<String>,
     pub pending_g: bool,
     pub selection_anchor: Option<usize>,
+    pub editing_task_id: Option<Uuid>,
 }
 
 impl AppState {
@@ -56,6 +59,7 @@ impl AppState {
             filter_string: None,
             pending_g: false,
             selection_anchor: None,
+            editing_task_id: None,
         })
     }
 
@@ -127,6 +131,28 @@ impl AppState {
                 self.storage.delete_task(task.id)?;
                 self.reload_tasks()?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn start_editing(&mut self) {
+        if let Some(task) = self.tasks.get(self.selected_index) {
+            self.editing_task_id = Some(task.id);
+            self.command_buffer = task.title.clone();
+            self.mode = Mode::Insert;
+            self.insert_action = InsertAction::Edit;
+        }
+    }
+
+    pub fn commit_edit(&mut self) -> Result<()> {
+        if let Some(id) = self.editing_task_id {
+            if let Some(mut task) = self.tasks.iter().find(|t| t.id == id).cloned() {
+                task.title = self.command_buffer.clone();
+                task.updated_at = Utc::now();
+                self.storage.save_task(&task)?;
+                self.reload_tasks()?;
+            }
+            self.editing_task_id = None;
         }
         Ok(())
     }
@@ -242,6 +268,9 @@ impl AppState {
             "sort position" => {
                 self.sort_by = SortBy::Position;
                 self.reload_tasks()?;
+            }
+            "stats" => {
+                self.mode = Mode::Stats;
             }
             _ => {
                 if cmd.starts_with("filter ") {
