@@ -1,10 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStatus {
     Todo,
+    Doing,
     Done,
+    Archived,
 }
 
 impl Default for TaskStatus {
@@ -13,65 +16,63 @@ impl Default for TaskStatus {
     }
 }
 
-// Helper to map string to enum for DB
-impl From<String> for TaskStatus {
-    fn from(s: String) -> Self {
-        match s.as_str() {
-            "Done" => TaskStatus::Done,
-            _ => TaskStatus::Todo,
-        }
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TaskStatus::Todo => "Todo",
+            TaskStatus::Doing => "Doing",
+            TaskStatus::Done => "Done",
+            TaskStatus::Archived => "Archived",
+        };
+        write!(f, "{}", s)
     }
 }
 
-impl ToString for TaskStatus {
-    fn to_string(&self) -> String {
-        match self {
-            TaskStatus::Todo => "Todo".to_string(),
-            TaskStatus::Done => "Done".to_string(),
+impl From<String> for TaskStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "Doing" => TaskStatus::Doing,
+            "Done" => TaskStatus::Done,
+            "Archived" => TaskStatus::Archived,
+            _ => TaskStatus::Todo,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: Option<i64>,
+    pub id: Uuid,
     pub title: String,
     pub description: Option<String>,
     pub status: TaskStatus,
+    pub priority: i32,
     pub due_date: Option<DateTime<Utc>>,
-    pub project_id: Option<i64>,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub tags: Vec<String>,
+    pub project: Option<String>,
+    pub recurrence_rule: Option<String>,
+    pub dependencies: Vec<Uuid>,
+    pub position: i32,
 }
 
 impl Task {
-    pub fn new(title: String, project_id: Option<i64>) -> Self {
+    pub fn new(title: String) -> Self {
+        let now = Utc::now();
         Self {
-            id: None,
+            id: Uuid::new_v4(),
             title,
             description: None,
             status: TaskStatus::Todo,
+            priority: 3,
             due_date: None,
-            project_id,
-            created_at: Utc::now(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Project {
-    pub id: Option<i64>,
-    pub name: String,
-    pub color: String,
-    pub created_at: DateTime<Utc>,
-}
-
-impl Project {
-    pub fn new(name: String, color: String) -> Self {
-        Self {
-            id: None,
-            name,
-            color,
-            created_at: Utc::now(),
+            created_at: now,
+            updated_at: now,
+            tags: Vec::new(),
+            project: None,
+            recurrence_rule: None,
+            dependencies: Vec::new(),
+            position: 0,
         }
     }
 }
