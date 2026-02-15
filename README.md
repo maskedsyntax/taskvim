@@ -4,7 +4,7 @@ A modal, keyboard-first, high-performance terminal task manager written in Rust,
 
 ## Features
 
-- Modal editing (Normal, Insert, Visual, Command modes)
+- Modal editing (Normal, Insert, Visual, Command, and Stats modes)
 - SQLite backend for reliable storage
 - Scriptable configuration via Lua
 - Filtering DSL for complex task queries
@@ -38,17 +38,59 @@ taskvim
 ### Modes
 
 - **Normal Mode**: Navigate and manage tasks.
-- **Insert Mode**: Add or edit tasks.
+- **Insert Mode**: Edit task titles or add new tasks.
+- **Visual Mode**: Select multiple tasks for bulk operations.
 - **Command Mode**: Execute commands using `:`.
+- **Stats Mode**: View productivity statistics.
 
 ### Keybindings (Default)
 
-- `j` / `k`: Navigate up/down
-- `i`: Enter Insert Mode (Add new task)
-- `d`: Delete selected task
+#### Navigation
+- `j` / `k`: Move selection down/up
+- `gg`: Move to top
+- `G`: Move to bottom
+- `Ctrl+d`: Page down
+- `Ctrl+u`: Page up
+
+#### Task Actions
+- `i`: Edit selected task title
+- `a`: Add new task at the end
+- `o`: Add new task below selection
+- `O`: Add new task above selection
+- `d`: Delete selected task (or visual selection)
+- `Enter`: Cycle task status (Todo -> Doing -> Done -> Archived)
+- `+` / `>`: Increase priority
+- `-` / `<`: Decrease priority
+
+#### Visual Mode
+- `v`: Toggle Visual Mode
+- `j` / `k`: Expand selection
+- `d`: Bulk delete selected tasks
+
+#### General
 - `:`: Enter Command Mode
 - `Esc`: Return to Normal Mode
 - `q`: Quit
+
+### Commands
+
+- `:w`: Save changes
+- `:q`: Quit
+- `:wq`: Save and quit
+- `:stats`: Open statistics view
+- `:sort [priority|created|position]`: Sort tasks
+- `:filter [expression]`: Filter tasks using DSL (e.g., `:filter status=todo priority>=3`)
+- `:filter`: Clear current filter
+
+### Filtering DSL
+
+Syntax: `field[operator]value`
+
+Supported fields: `status`, `priority`, `project`, `due`, `created`
+Supported operators: `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`
+
+Example:
+`:filter project=work priority>=4`
 
 ## Configuration
 
