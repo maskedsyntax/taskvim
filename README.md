@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/taskvim.png" alt="TaskVim Logo" width="400">
+</p>
+
 # TaskVim
 
 A modal, keyboard-first, high-performance terminal task manager written in Rust, inspired by Vim and Neovim.
