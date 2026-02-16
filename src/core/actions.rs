@@ -24,6 +24,8 @@ pub enum Action {
     ToggleCollapse,
     NextProject,
     PrevProject,
+    Yank,
+    Paste,
 }
 
 impl FromStr for Action {
@@ -53,6 +55,8 @@ impl FromStr for Action {
             "toggle_collapse" => Ok(Action::ToggleCollapse),
             "next_project" => Ok(Action::NextProject),
             "prev_project" => Ok(Action::PrevProject),
+            "yank" => Ok(Action::Yank),
+            "paste" => Ok(Action::Paste),
             _ => Err(()),
         }
     }

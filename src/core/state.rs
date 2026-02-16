@@ -1,11 +1,12 @@
 use crate::domain::{Task, TaskStatus};
 use crate::storage::SqliteStorage;
 use crate::error::Result;
-use crate::config::lua::Config;
+use crate::config::lua::{Config, LuaConfig};
 use crate::core::actions::Action;
 use chrono::Utc;
 use uuid::Uuid;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -44,15 +45,19 @@ pub struct AppState {
     pub filter_string: Option<String>,
     pub pending_g: bool,
     pub pending_z: bool,
+    pub pending_y: bool,
     pub selection_anchor: Option<usize>,
     pub editing_task_id: Option<Uuid>,
     pub config: Config,
+    pub lua_config: Arc<LuaConfig>,
     pub collapsed_projects: HashSet<String>,
+    pub yanked_task: Option<Task>,
 }
 
 impl AppState {
-    pub fn new(storage: SqliteStorage, config: Config) -> Result<Self> {
+    pub fn new(storage: SqliteStorage, lua_config: Arc<LuaConfig>) -> Result<Self> {
         let tasks = storage.get_tasks(None)?;
+        let config = lua_config.get_config();
         Ok(Self {
             tasks,
             selected_index: 0,
@@ -65,10 +70,13 @@ impl AppState {
             filter_string: None,
             pending_g: false,
             pending_z: false,
+            pending_y: false,
             selection_anchor: None,
             editing_task_id: None,
             config,
+            lua_config,
             collapsed_projects: HashSet::new(),
+            yanked_task: None,
         })
     }
 
@@ -102,6 +110,7 @@ impl AppState {
         task.priority = self.config.default_priority;
         task.position = self.tasks.iter().map(|t| t.position).max().unwrap_or(0) + 1;
         self.storage.save_task(&task)?;
+        let _ = self.lua_config.trigger_hook("on_task_create", Some(&task));
         self.reload_tasks()?;
         Ok(())
     }
@@ -121,6 +130,7 @@ impl AppState {
         new_task.priority = self.config.default_priority;
         new_task.position = current_pos + 1;
         self.storage.save_task(&new_task)?;
+        let _ = self.lua_config.trigger_hook("on_task_create", Some(&new_task));
         self.reload_tasks()?;
         self.selected_index += 1;
         Ok(())
@@ -141,6 +151,7 @@ impl AppState {
         new_task.priority = self.config.default_priority;
         new_task.position = current_pos;
         self.storage.save_task(&new_task)?;
+        let _ = self.lua_config.trigger_hook("on_task_create", Some(&new_task));
         self.reload_tasks()?;
         Ok(())
     }
@@ -172,9 +183,11 @@ impl AppState {
         if let Some(id) = self.editing_task_id {
             if let Some(mut task) = self.tasks.iter().find(|t| t.id == id).cloned() {
                 self.storage.push_history(&task)?;
+                self.storage.clear_redo()?;
                 task.title = self.command_buffer.clone();
                 task.updated_at = Utc::now();
                 self.storage.save_task(&task)?;
+                let _ = self.lua_config.trigger_hook("on_task_update", Some(&task));
                 self.reload_tasks()?;
             }
             self.editing_task_id = None;
@@ -208,10 +221,58 @@ impl AppState {
 
     pub fn undo(&mut self) -> Result<()> {
         if let Some((hist_id, task)) = self.storage.get_latest_history()? {
-            // To support redo, we could push current state to a redo table here
+            // Push current state to redo before reverting
+            if let Some(current) = self.tasks.iter().find(|t| t.id == task.id) {
+                self.storage.push_redo(current)?;
+            }
             self.storage.save_task(&task)?;
             self.storage.delete_history_entry(hist_id)?;
             self.reload_tasks()?;
+        }
+        Ok(())
+    }
+
+    pub fn redo(&mut self) -> Result<()> {
+        if let Some((redo_id, task)) = self.storage.get_latest_redo()? {
+            // Push current state to undo before applying redo
+            if let Some(current) = self.tasks.iter().find(|t| t.id == task.id) {
+                self.storage.push_history(current)?;
+            }
+            self.storage.save_task(&task)?;
+            self.storage.delete_redo_entry(redo_id)?;
+            self.reload_tasks()?;
+        }
+        Ok(())
+    }
+
+    pub fn yank_selected(&mut self) {
+        if let Some(task) = self.tasks.get(self.selected_index) {
+            self.yanked_task = Some(task.clone());
+        }
+    }
+
+    pub fn paste_below(&mut self) -> Result<()> {
+        if let Some(task) = self.yanked_task.clone() {
+            let mut new_task = task;
+            new_task.id = Uuid::new_v4();
+            new_task.created_at = Utc::now();
+            new_task.updated_at = Utc::now();
+            
+            let current_pos = self.tasks.get(self.selected_index).map(|t| t.position).unwrap_or(0);
+            
+            // Shift
+            for t in self.tasks.iter_mut() {
+                if t.position > current_pos {
+                    t.position += 1;
+                    self.storage.save_task(t)?;
+                }
+            }
+
+            new_task.position = current_pos + 1;
+            self.storage.save_task(&new_task)?;
+            self.storage.clear_redo()?;
+            self.reload_tasks()?;
+            self.selected_index += 1;
         }
         Ok(())
     }
@@ -220,6 +281,7 @@ impl AppState {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
             if task.priority < 5 {
                 self.storage.push_history(&task)?;
+                self.storage.clear_redo()?;
                 task.priority += 1;
                 self.storage.save_task(&task)?;
                 self.reload_tasks()?;
@@ -232,6 +294,7 @@ impl AppState {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
             if task.priority > 1 {
                 self.storage.push_history(&task)?;
+                self.storage.clear_redo()?;
                 task.priority -= 1;
                 self.storage.save_task(&task)?;
                 self.reload_tasks()?;
@@ -243,6 +306,7 @@ impl AppState {
     pub fn cycle_status(&mut self) -> Result<()> {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
             self.storage.push_history(&task)?;
+            self.storage.clear_redo()?;
             task.status = match task.status {
                 TaskStatus::Todo => TaskStatus::Doing,
                 TaskStatus::Doing => TaskStatus::Done,
@@ -251,6 +315,7 @@ impl AppState {
             };
             task.updated_at = Utc::now();
             self.storage.save_task(&task)?;
+            let _ = self.lua_config.trigger_hook("on_status_change", Some(&task));
             self.reload_tasks()?;
         }
         Ok(())
@@ -400,12 +465,12 @@ impl AppState {
                 self.editing_task_id = None;
             }
             Action::Undo => self.undo()?,
-            Action::Redo => {
-                // TODO: Implement redo
-            }
+            Action::Redo => self.redo()?,
             Action::ToggleCollapse => self.toggle_collapse()?,
             Action::NextProject => self.next_project()?,
             Action::PrevProject => self.prev_project()?,
+            Action::Yank => self.yank_selected(),
+            Action::Paste => self.paste_below()?,
         }
         Ok(())
     }
@@ -435,7 +500,10 @@ impl AppState {
                 self.mode = Mode::Stats;
             }
             _ => {
-                if cmd.starts_with("filter ") {
+                if cmd.starts_with("lua ") {
+                    let code = &cmd[4..];
+                    let _ = self.lua_config.run_code(code);
+                } else if cmd.starts_with("filter ") {
                     let filter_part = &cmd[7..];
                     if filter_part.trim().is_empty() {
                          self.filter_string = None;

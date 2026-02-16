@@ -11,16 +11,18 @@ use crate::ui::Tui;
 use crate::config::LuaConfig;
 use crate::error::Result;
 
+use std::sync::Arc;
+
 fn main() -> Result<()> {
     // Initialize Lua config
-    let lua_config = LuaConfig::new()?;
+    let lua_config = Arc::new(LuaConfig::new()?);
     let _ = lua_config.load_user_config();
 
     // Initialize storage
     let storage = SqliteStorage::new("taskvim.db")?;
     
     // Initialize app state
-    let mut state = AppState::new(storage, lua_config.get_config())?;
+    let mut state = AppState::new(storage, Arc::clone(&lua_config))?;
     
     // Initialize and run TUI
     let mut tui = Tui::new()?;

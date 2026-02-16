@@ -69,9 +69,18 @@ impl Tui {
                                 state.handle_action(crate::core::actions::Action::ToggleCollapse)?;
                                 state.pending_z = false;
                             }
+                            KeyCode::Char('y') => {
+                                if state.pending_y {
+                                    state.handle_action(crate::core::actions::Action::Yank)?;
+                                    state.pending_y = false;
+                                } else {
+                                    state.pending_y = true;
+                                }
+                            }
                             _ => { 
                                 state.pending_g = false; 
                                 state.pending_z = false;
+                                state.pending_y = false;
                             }
                         },
                         Mode::Visual => match key.code {

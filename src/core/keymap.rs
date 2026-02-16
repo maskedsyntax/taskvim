@@ -95,6 +95,9 @@ impl Keymap {
             ("+", IncreasePriority),
             ("-", DecreasePriority),
             ("u", Undo),
+            ("ctrl-r", Redo),
+            ("p", Paste),
+            ("y", Yank), // For single y if needed, but yy handled in tui
             ("q", Quit),
         ];
 

@@ -9,7 +9,8 @@ mod tests {
         let tmp_file = NamedTempFile::new().unwrap();
         let path = tmp_file.path().to_str().unwrap();
         let storage = SqliteStorage::new(path).unwrap();
-        let mut state = AppState::new(storage, crate::config::lua::Config::default()).unwrap();
+        let lua_config = std::sync::Arc::new(crate::config::lua::LuaConfig::new().unwrap());
+        let mut state = AppState::new(storage, lua_config).unwrap();
 
         state.add_task("Task 1".to_string()).unwrap();
         state.add_task("Task 2".to_string()).unwrap();
@@ -32,7 +33,8 @@ mod tests {
         let tmp_file = NamedTempFile::new().unwrap();
         let path = tmp_file.path().to_str().unwrap();
         let storage = SqliteStorage::new(path).unwrap();
-        let mut state = AppState::new(storage, crate::config::lua::Config::default()).unwrap();
+        let lua_config = std::sync::Arc::new(crate::config::lua::LuaConfig::new().unwrap());
+        let mut state = AppState::new(storage, lua_config).unwrap();
 
         state.add_task("Original Title".to_string()).unwrap();
         let id = state.tasks[0].id;
@@ -56,7 +58,8 @@ mod tests {
         let tmp_file = NamedTempFile::new().unwrap();
         let path = tmp_file.path().to_str().unwrap();
         let storage = SqliteStorage::new(path).unwrap();
-        let mut state = AppState::new(storage, crate::config::lua::Config::default()).unwrap();
+        let lua_config = std::sync::Arc::new(crate::config::lua::LuaConfig::new().unwrap());
+        let mut state = AppState::new(storage, lua_config).unwrap();
 
         state.add_task("Initial Task".to_string()).unwrap();
         state.selected_index = 0;

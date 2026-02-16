@@ -5,6 +5,7 @@ use crate::core::state::Mode;
 use mlua::Lua;
 use std::sync::{Arc, Mutex};
 use std::str::FromStr;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -12,6 +13,7 @@ pub struct Config {
     pub default_priority: i32,
     pub show_sidebar: bool,
     pub keymap: Keymap,
+    pub hooks: HashMap<String, Vec<String>>,
 }
 
 impl Default for Config {
@@ -21,6 +23,7 @@ impl Default for Config {
             default_priority: 3,
             show_sidebar: true,
             keymap: Keymap::new(),
+            hooks: HashMap::new(),
         }
     }
 }
@@ -43,9 +46,26 @@ impl LuaConfig {
         self.config.lock().unwrap().clone()
     }
 
+    pub fn trigger_hook(&self, name: &str, _task: Option<&crate::domain::Task>) -> Result<()> {
+        let globals = self.lua.globals();
+        if let Ok(hooks_table) = globals.get::<_, mlua::Table>("__hooks") {
+            if let Ok(hook_list) = hooks_table.get::<_, mlua::Table>(name) {
+                for i in 1..=hook_list.len()? {
+                    let func = hook_list.get::<_, mlua::Function>(i)?;
+                    func.call::<_, ()>(())?;
+                }
+            }
+        }
+        Ok(Default::default())
+    }
+
     fn init_api(&self) -> Result<()> {
         let globals = self.lua.globals();
         let config_arc = Arc::clone(&self.config);
+
+        // Internal hooks table
+        let hooks_table = self.lua.create_table()?;
+        globals.set("__hooks", hooks_table)?;
 
         // set table
         let set = self.lua.create_table()?;
@@ -73,6 +93,17 @@ impl LuaConfig {
 
         globals.set("set", set)?;
 
+        // hook function
+        let lua = &self.lua;
+        globals.set("hook", lua.create_function(move |lua, (name, func): (String, mlua::Function)| {
+            let globals = lua.globals();
+            let hooks: mlua::Table = globals.get("__hooks")?;
+            let list: mlua::Table = hooks.get(name.clone()).unwrap_or_else(|_| lua.create_table().unwrap());
+            list.set(list.len()? + 1, func)?;
+            hooks.set(name, list)?;
+            Ok(())
+        })?)?;
+
         // map function
         let c_map = Arc::clone(&config_arc);
         globals.set("map", self.lua.create_function(move |_, (mode_str, key_str, action_str): (String, String, String)| {
@@ -80,7 +111,7 @@ impl LuaConfig {
                 "n" | "normal" => Mode::Normal,
                 "v" | "visual" => Mode::Visual,
                 "s" | "stats" => Mode::Stats,
-                _ => return Ok(()), // Ignore unknown modes
+                _ => return Ok(()),
             };
 
             if let Some(combo) = KeyCombination::from_str(&key_str) {
@@ -106,6 +137,11 @@ impl LuaConfig {
                 self.lua.load(&script).exec()?;
             }
         }
+        Ok(())
+    }
+
+    pub fn run_code(&self, code: &str) -> Result<()> {
+        self.lua.load(code).exec()?;
         Ok(())
     }
 }
