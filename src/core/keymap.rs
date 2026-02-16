@@ -98,6 +98,7 @@ impl Keymap {
             ("ctrl-r", Redo),
             ("p", Paste),
             ("y", Yank), // For single y if needed, but yy handled in tui
+            ("/", EnterSearch),
             ("q", Quit),
         ];
 

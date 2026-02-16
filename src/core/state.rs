@@ -5,7 +5,7 @@ use crate::config::lua::{Config, LuaConfig};
 use crate::core::actions::Action;
 use chrono::Utc;
 use uuid::Uuid;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +16,7 @@ pub enum Mode {
     Command,
     Filter,
     Stats,
+    Search,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,12 +47,17 @@ pub struct AppState {
     pub pending_g: bool,
     pub pending_z: bool,
     pub pending_y: bool,
+    pub pending_at: bool,
+    pub pending_q: bool,
     pub selection_anchor: Option<usize>,
     pub editing_task_id: Option<Uuid>,
     pub config: Config,
     pub lua_config: Arc<LuaConfig>,
     pub collapsed_projects: HashSet<String>,
     pub yanked_task: Option<Task>,
+    pub macro_recording: Option<char>,
+    pub macros: HashMap<char, Vec<crossterm::event::KeyEvent>>,
+    pub search_query: Option<String>,
 }
 
 impl AppState {
@@ -71,12 +77,17 @@ impl AppState {
             pending_g: false,
             pending_z: false,
             pending_y: false,
+            pending_at: false,
+            pending_q: false,
             selection_anchor: None,
             editing_task_id: None,
             config,
             lua_config,
             collapsed_projects: HashSet::new(),
             yanked_task: None,
+            macro_recording: None,
+            macros: HashMap::new(),
+            search_query: None,
         })
     }
 
@@ -90,13 +101,22 @@ impl AppState {
             SortBy::CreatedAt => all_tasks.sort_by_key(|t| t.created_at),
         }
 
-        // Filter out tasks in collapsed projects
+        // Filter out tasks in collapsed projects and apply search
         self.tasks = all_tasks.into_iter().filter(|t| {
-            if let Some(p) = &t.project {
+            let project_visible = if let Some(p) = &t.project {
                 !self.collapsed_projects.contains(p)
             } else {
                 true
-            }
+            };
+
+            let search_match = if let Some(q) = &self.search_query {
+                t.title.to_lowercase().contains(&q.to_lowercase()) || 
+                t.description.as_ref().map(|d| d.to_lowercase().contains(&q.to_lowercase())).unwrap_or(false)
+            } else {
+                true
+            };
+
+            project_visible && search_match
         }).collect();
 
         if self.selected_index >= self.tasks.len() && !self.tasks.is_empty() {
@@ -228,6 +248,17 @@ impl AppState {
             self.storage.save_task(&task)?;
             self.storage.delete_history_entry(hist_id)?;
             self.reload_tasks()?;
+        }
+        Ok(())
+    }
+
+    pub fn play_macro(&mut self, reg: char) -> Result<()> {
+        if let Some(events) = self.macros.get(&reg).cloned() {
+            for event in events {
+                if let Some(action) = self.config.keymap.get_action(self.mode, event) {
+                    self.handle_action(action)?;
+                }
+            }
         }
         Ok(())
     }
@@ -471,6 +502,10 @@ impl AppState {
             Action::PrevProject => self.prev_project()?,
             Action::Yank => self.yank_selected(),
             Action::Paste => self.paste_below()?,
+            Action::EnterSearch => {
+                self.mode = Mode::Search;
+                self.command_buffer.clear();
+            }
         }
         Ok(())
     }

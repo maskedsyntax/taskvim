@@ -26,6 +26,7 @@ pub enum Action {
     PrevProject,
     Yank,
     Paste,
+    EnterSearch,
 }
 
 impl FromStr for Action {
@@ -57,6 +58,7 @@ impl FromStr for Action {
             "prev_project" => Ok(Action::PrevProject),
             "yank" => Ok(Action::Yank),
             "paste" => Ok(Action::Paste),
+            "search" => Ok(Action::EnterSearch),
             _ => Err(()),
         }
     }

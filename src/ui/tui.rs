@@ -34,6 +34,13 @@ impl Tui {
 
             if event::poll(std::time::Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
+                    // Record macro if active
+                    if let Some(reg) = state.macro_recording {
+                        if key.code != KeyCode::Char('q') {
+                            state.macros.entry(reg).or_default().push(key);
+                        }
+                    }
+
                     // Try to get action from keymap first (Normal, Visual, Stats)
                     if let Some(action) = state.config.keymap.get_action(state.mode, key) {
                         state.handle_action(action)?;
@@ -77,10 +84,33 @@ impl Tui {
                                     state.pending_y = true;
                                 }
                             }
+                            KeyCode::Char('q') => {
+                                if let Some(_) = state.macro_recording {
+                                    state.macro_recording = None;
+                                } else if state.pending_q {
+                                    state.pending_q = false;
+                                } else {
+                                    state.pending_q = true;
+                                }
+                            }
+                            KeyCode::Char(c) if state.pending_q => {
+                                state.macro_recording = Some(c);
+                                state.macros.insert(c, Vec::new());
+                                state.pending_q = false;
+                            }
+                            KeyCode::Char('@') => {
+                                state.pending_at = true;
+                            }
+                            KeyCode::Char(c) if state.pending_at => {
+                                state.play_macro(c)?;
+                                state.pending_at = false;
+                            }
                             _ => { 
                                 state.pending_g = false; 
                                 state.pending_z = false;
                                 state.pending_y = false;
+                                state.pending_q = false;
+                                state.pending_at = false;
                             }
                         },
                         Mode::Visual => match key.code {
@@ -114,6 +144,33 @@ impl Tui {
                             KeyCode::Char(c) => state.command_buffer.push(c),
                             KeyCode::Backspace => {
                                 state.command_buffer.pop();
+                            }
+                            _ => {}
+                        },
+                        Mode::Search => match key.code {
+                            KeyCode::Esc => {
+                                state.mode = Mode::Normal;
+                                state.search_query = None;
+                                state.reload_tasks()?;
+                            }
+                            KeyCode::Enter => {
+                                state.search_query = Some(state.command_buffer.clone());
+                                state.reload_tasks()?;
+                                state.mode = Mode::Normal;
+                            }
+                            KeyCode::Char(c) => {
+                                state.command_buffer.push(c);
+                                state.search_query = Some(state.command_buffer.clone());
+                                state.reload_tasks()?;
+                            }
+                            KeyCode::Backspace => {
+                                state.command_buffer.pop();
+                                if state.command_buffer.is_empty() {
+                                    state.search_query = None;
+                                } else {
+                                    state.search_query = Some(state.command_buffer.clone());
+                                }
+                                state.reload_tasks()?;
                             }
                             _ => {}
                         },
@@ -248,11 +305,15 @@ fn ui(f: &mut ratatui::Frame, state: &AppState) {
     }
 
     let status_bar = match state.mode {
-        Mode::Normal => Paragraph::new("-- NORMAL --"),
+        Mode::Normal => {
+            let recording = state.macro_recording.map(|c| format!(" recording @{}", c)).unwrap_or_default();
+            Paragraph::new(format!("-- NORMAL --{}", recording))
+        },
         Mode::Insert => Paragraph::new(format!("-- INSERT -- {}", state.command_buffer)),
         Mode::Command => Paragraph::new(format!(":{}", state.command_buffer)),
         Mode::Visual => Paragraph::new("-- VISUAL --"),
         Mode::Stats => Paragraph::new("-- STATS --"),
+        Mode::Search => Paragraph::new(format!("/{}", state.command_buffer)),
         Mode::Filter => Paragraph::new(format!("-- FILTER -- {}", state.command_buffer)),
     };
     f.render_widget(status_bar, chunks[1]);
