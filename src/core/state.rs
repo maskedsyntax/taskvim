@@ -2,10 +2,11 @@ use crate::domain::{Task, TaskStatus};
 use crate::storage::SqliteStorage;
 use crate::error::Result;
 use crate::config::lua::Config;
+use crate::core::actions::Action;
 use chrono::Utc;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
     Normal,
     Insert,
@@ -252,6 +253,52 @@ impl AppState {
 
     pub fn page_up(&mut self) {
         self.selected_index = self.selected_index.saturating_sub(10);
+    }
+
+    pub fn handle_action(&mut self, action: Action) -> Result<()> {
+        match action {
+            Action::Quit => self.running = false,
+            Action::MoveDown => self.move_selection_down(),
+            Action::MoveUp => self.move_selection_up(),
+            Action::MoveToTop => self.move_to_top(),
+            Action::MoveToBottom => self.move_to_bottom(),
+            Action::PageDown => self.page_down(),
+            Action::PageUp => self.page_up(),
+            Action::Delete => self.delete_selected_task()?,
+            Action::CycleStatus => self.cycle_status()?,
+            Action::IncreasePriority => self.increase_priority()?,
+            Action::DecreasePriority => self.decrease_priority()?,
+            Action::EnterInsert => {
+                if self.tasks.is_empty() {
+                    self.mode = Mode::Insert;
+                    self.insert_action = InsertAction::AddEnd;
+                } else {
+                    self.start_editing();
+                }
+            }
+            Action::EnterInsertBelow => {
+                self.mode = Mode::Insert;
+                self.insert_action = InsertAction::AddBelow;
+            }
+            Action::EnterInsertAbove => {
+                self.mode = Mode::Insert;
+                self.insert_action = InsertAction::AddAbove;
+            }
+            Action::EnterVisual => {
+                self.mode = Mode::Visual;
+                self.selection_anchor = Some(self.selected_index);
+            }
+            Action::EnterCommand => {
+                self.mode = Mode::Command;
+                self.command_buffer.clear();
+            }
+            Action::Cancel => {
+                self.mode = Mode::Normal;
+                self.selection_anchor = None;
+                self.editing_task_id = None;
+            }
+        }
+        Ok(())
     }
 
     pub fn execute_command(&mut self, cmd: &str) -> Result<()> {

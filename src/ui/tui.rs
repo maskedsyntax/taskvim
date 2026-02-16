@@ -34,101 +34,44 @@ impl Tui {
 
             if event::poll(std::time::Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
-                    let mut handled = true;
+                    // Try to get action from keymap first (Normal, Visual, Stats)
+                    if let Some(action) = state.config.keymap.get_action(state.mode, key) {
+                        state.handle_action(action)?;
+                        if key.code != KeyCode::Char('g') {
+                            state.pending_g = false;
+                        }
+                        continue;
+                    }
+
+                    // Fallback to manual handling for Insert/Command or special keys
                     match state.mode {
                         Mode::Normal => match key.code {
-                            KeyCode::Char('q') => state.running = false,
-                            KeyCode::Char('j') => state.move_selection_down(),
-                            KeyCode::Char('k') => state.move_selection_up(),
                             KeyCode::Char('g') => {
                                 if state.pending_g {
                                     state.move_to_top();
                                     state.pending_g = false;
                                 } else {
                                     state.pending_g = true;
-                                    handled = false;
                                 }
                             }
-                            KeyCode::Char('G') => state.move_to_bottom(),
-                            KeyCode::Char('d') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                                state.page_down();
-                            }
-                            KeyCode::Char('u') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                                state.page_up();
-                            }
-                            KeyCode::Char('i') => {
-                                if state.tasks.is_empty() {
-                                    state.mode = Mode::Insert;
-                                    state.insert_action = crate::core::state::InsertAction::AddEnd;
-                                } else {
-                                    state.start_editing();
-                                }
-                            }
-                            KeyCode::Char('a') => {
-                                state.mode = Mode::Insert;
-                                state.insert_action = crate::core::state::InsertAction::AddEnd;
-                            }
-                            KeyCode::Char('o') => {
-                                state.mode = Mode::Insert;
-                                state.insert_action = crate::core::state::InsertAction::AddBelow;
-                            }
-                            KeyCode::Char('O') => {
-                                state.mode = Mode::Insert;
-                                state.insert_action = crate::core::state::InsertAction::AddAbove;
-                            }
-                            KeyCode::Char(':') => {
-                                state.mode = Mode::Command;
-                                state.command_buffer.clear();
-                            }
-                            KeyCode::Char('d') => {
-                                // Simple dd for now
-                                state.delete_selected_task()?;
-                            }
-                            KeyCode::Char('+') | KeyCode::Char('>') => {
-                                state.increase_priority()?;
-                            }
-                            KeyCode::Char('-') | KeyCode::Char('<') => {
-                                state.decrease_priority()?;
-                            }
-                            KeyCode::Enter => {
-                                state.cycle_status()?;
-                            }
-                            KeyCode::Char('v') => {
-                                state.mode = Mode::Visual;
-                                state.selection_anchor = Some(state.selected_index);
-                            }
-                            _ => { handled = false; }
+                            _ => { state.pending_g = false; }
                         },
                         Mode::Visual => match key.code {
-                            KeyCode::Char('v') | KeyCode::Esc => {
-                                state.mode = Mode::Normal;
-                                state.selection_anchor = None;
-                            }
-                            KeyCode::Char('j') => state.move_selection_down(),
-                            KeyCode::Char('k') => state.move_selection_up(),
-                            KeyCode::Char('d') => {
-                                state.delete_selected_task()?;
-                                state.mode = Mode::Normal;
-                                state.selection_anchor = None;
-                            }
-                            KeyCode::Char('G') => state.move_to_bottom(),
                             KeyCode::Char('g') => {
                                 if state.pending_g {
                                     state.move_to_top();
                                     state.pending_g = false;
                                 } else {
                                     state.pending_g = true;
-                                    handled = false;
                                 }
                             }
-                            _ => { handled = false; }
-                        },
-                        Mode::Stats => match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => state.mode = Mode::Normal,
-                            _ => { handled = false; }
+                            _ => { state.pending_g = false; }
                         },
                         Mode::Insert => match key.code {
-                            KeyCode::Esc => state.mode = Mode::Normal,
+                            KeyCode::Esc => {
+                                state.mode = Mode::Normal;
+                                state.editing_task_id = None;
+                            }
                             KeyCode::Enter => {
                                 if !state.command_buffer.is_empty() {
                                     match state.insert_action {
@@ -145,7 +88,7 @@ impl Tui {
                             KeyCode::Backspace => {
                                 state.command_buffer.pop();
                             }
-                            _ => { handled = false; }
+                            _ => {}
                         },
                         Mode::Command => match key.code {
                             KeyCode::Esc => state.mode = Mode::Normal,
@@ -159,13 +102,9 @@ impl Tui {
                             KeyCode::Backspace => {
                                 state.command_buffer.pop();
                             }
-                            _ => { handled = false; }
+                            _ => {}
                         },
-                        _ => { handled = false; }
-                    }
-
-                    if handled && key.code != KeyCode::Char('g') {
-                        state.pending_g = false;
+                        _ => {}
                     }
                 }
             }

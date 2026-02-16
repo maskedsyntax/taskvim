@@ -1,12 +1,17 @@
 use crate::error::Result;
+use crate::core::keymap::{Keymap, KeyCombination};
+use crate::core::actions::Action;
+use crate::core::state::Mode;
 use mlua::Lua;
 use std::sync::{Arc, Mutex};
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: String,
     pub default_priority: i32,
     pub show_sidebar: bool,
+    pub keymap: Keymap,
 }
 
 impl Default for Config {
@@ -15,6 +20,7 @@ impl Default for Config {
             theme: "default".to_string(),
             default_priority: 3,
             show_sidebar: true,
+            keymap: Keymap::new(),
         }
     }
 }
@@ -67,8 +73,22 @@ impl LuaConfig {
 
         globals.set("set", set)?;
 
-        // map function (skeleton for now)
-        globals.set("map", self.lua.create_function(|_, (_mode, _key, _action): (String, String, String)| {
+        // map function
+        let c_map = Arc::clone(&config_arc);
+        globals.set("map", self.lua.create_function(move |_, (mode_str, key_str, action_str): (String, String, String)| {
+            let mode = match mode_str.as_str() {
+                "n" | "normal" => Mode::Normal,
+                "v" | "visual" => Mode::Visual,
+                "s" | "stats" => Mode::Stats,
+                _ => return Ok(()), // Ignore unknown modes
+            };
+
+            if let Some(combo) = KeyCombination::from_str(&key_str) {
+                if let Ok(action) = Action::from_str(&action_str) {
+                    let mut c = c_map.lock().unwrap();
+                    c.keymap.mappings.entry(mode).or_default().insert(combo, action);
+                }
+            }
             Ok(())
         })?)?;
 
