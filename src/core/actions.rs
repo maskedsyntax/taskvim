@@ -21,6 +21,9 @@ pub enum Action {
     Cancel,
     Undo,
     Redo,
+    ToggleCollapse,
+    NextProject,
+    PrevProject,
 }
 
 impl FromStr for Action {
@@ -47,6 +50,9 @@ impl FromStr for Action {
             "cancel" => Ok(Action::Cancel),
             "undo" => Ok(Action::Undo),
             "redo" => Ok(Action::Redo),
+            "toggle_collapse" => Ok(Action::ToggleCollapse),
+            "next_project" => Ok(Action::NextProject),
+            "prev_project" => Ok(Action::PrevProject),
             _ => Err(()),
         }
     }

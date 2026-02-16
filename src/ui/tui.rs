@@ -54,7 +54,25 @@ impl Tui {
                                     state.pending_g = true;
                                 }
                             }
-                            _ => { state.pending_g = false; }
+                            KeyCode::Char('t') if state.pending_g => {
+                                state.handle_action(crate::core::actions::Action::NextProject)?;
+                                state.pending_g = false;
+                            }
+                            KeyCode::Char('T') if state.pending_g => {
+                                state.handle_action(crate::core::actions::Action::PrevProject)?;
+                                state.pending_g = false;
+                            }
+                            KeyCode::Char('z') => {
+                                state.pending_z = true;
+                            }
+                            KeyCode::Char('a') if state.pending_z => {
+                                state.handle_action(crate::core::actions::Action::ToggleCollapse)?;
+                                state.pending_z = false;
+                            }
+                            _ => { 
+                                state.pending_g = false; 
+                                state.pending_z = false;
+                            }
                         },
                         Mode::Visual => match key.code {
                             KeyCode::Char('g') => {

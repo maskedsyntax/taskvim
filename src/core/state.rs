@@ -5,6 +5,7 @@ use crate::config::lua::Config;
 use crate::core::actions::Action;
 use chrono::Utc;
 use uuid::Uuid;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -42,9 +43,11 @@ pub struct AppState {
     pub sort_by: SortBy,
     pub filter_string: Option<String>,
     pub pending_g: bool,
+    pub pending_z: bool,
     pub selection_anchor: Option<usize>,
     pub editing_task_id: Option<Uuid>,
     pub config: Config,
+    pub collapsed_projects: HashSet<String>,
 }
 
 impl AppState {
@@ -61,19 +64,33 @@ impl AppState {
             sort_by: SortBy::Position,
             filter_string: None,
             pending_g: false,
+            pending_z: false,
             selection_anchor: None,
             editing_task_id: None,
             config,
+            collapsed_projects: HashSet::new(),
         })
     }
 
     pub fn reload_tasks(&mut self) -> Result<()> {
-        self.tasks = self.storage.get_tasks(self.filter_string.as_deref())?;
+        let mut all_tasks = self.storage.get_tasks(self.filter_string.as_deref())?;
+        
+        // Apply sorting first
         match self.sort_by {
-            SortBy::Position => self.tasks.sort_by_key(|t| t.position),
-            SortBy::Priority => self.tasks.sort_by_key(|t| -t.priority),
-            SortBy::CreatedAt => self.tasks.sort_by_key(|t| t.created_at),
+            SortBy::Position => all_tasks.sort_by_key(|t| t.position),
+            SortBy::Priority => all_tasks.sort_by_key(|t| -t.priority),
+            SortBy::CreatedAt => all_tasks.sort_by_key(|t| t.created_at),
         }
+
+        // Filter out tasks in collapsed projects
+        self.tasks = all_tasks.into_iter().filter(|t| {
+            if let Some(p) = &t.project {
+                !self.collapsed_projects.contains(p)
+            } else {
+                true
+            }
+        }).collect();
+
         if self.selected_index >= self.tasks.len() && !self.tasks.is_empty() {
             self.selected_index = self.tasks.len() - 1;
         }
@@ -239,6 +256,77 @@ impl AppState {
         Ok(())
     }
 
+    pub fn toggle_collapse(&mut self) -> Result<()> {
+        if let Some(task) = self.tasks.get(self.selected_index) {
+            if let Some(project) = &task.project {
+                if self.collapsed_projects.contains(project) {
+                    self.collapsed_projects.remove(project);
+                } else {
+                    self.collapsed_projects.insert(project.clone());
+                }
+                self.reload_tasks()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get_all_projects(&self) -> Vec<String> {
+        let mut projects: HashSet<String> = HashSet::new();
+        // We need all projects from DB to navigate correctly
+        if let Ok(tasks) = self.storage.get_tasks(None) {
+            for t in tasks {
+                if let Some(p) = t.project {
+                    projects.insert(p);
+                }
+            }
+        }
+        let mut sorted: Vec<String> = projects.into_iter().collect();
+        sorted.sort();
+        sorted
+    }
+
+    pub fn next_project(&mut self) -> Result<()> {
+        let projects = self.get_all_projects();
+        if projects.is_empty() { return Ok(()); }
+
+        let current_project = self.tasks.get(self.selected_index).and_then(|t| t.project.clone());
+        let next_idx = if let Some(p) = current_project {
+            if let Ok(idx) = projects.binary_search(&p) {
+                (idx + 1) % projects.len()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        self.filter_string = Some(format!("project={}", projects[next_idx]));
+        self.reload_tasks()?;
+        self.selected_index = 0;
+        Ok(())
+    }
+
+    pub fn prev_project(&mut self) -> Result<()> {
+        let projects = self.get_all_projects();
+        if projects.is_empty() { return Ok(()); }
+
+        let current_project = self.tasks.get(self.selected_index).and_then(|t| t.project.clone());
+        let prev_idx = if let Some(p) = current_project {
+            if let Ok(idx) = projects.binary_search(&p) {
+                (idx + projects.len() - 1) % projects.len()
+            } else {
+                projects.len() - 1
+            }
+        } else {
+            projects.len() - 1
+        };
+
+        self.filter_string = Some(format!("project={}", projects[prev_idx]));
+        self.reload_tasks()?;
+        self.selected_index = 0;
+        Ok(())
+    }
+
     pub fn move_selection_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
@@ -315,6 +403,9 @@ impl AppState {
             Action::Redo => {
                 // TODO: Implement redo
             }
+            Action::ToggleCollapse => self.toggle_collapse()?,
+            Action::NextProject => self.next_project()?,
+            Action::PrevProject => self.prev_project()?,
         }
         Ok(())
     }

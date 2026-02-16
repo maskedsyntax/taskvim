@@ -89,6 +89,7 @@ impl Keymap {
             ("O", EnterInsertAbove),
             ("d", Delete),
             ("v", EnterVisual),
+            ("r", EnterInsert),
             (":", EnterCommand),
             ("enter", CycleStatus),
             ("+", IncreasePriority),
