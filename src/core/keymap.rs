@@ -18,6 +18,13 @@ impl KeyCombination {
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
+        if s == "-" {
+            return Some(Self {
+                code: KeyCode::Char('-'),
+                modifiers: KeyModifiers::empty(),
+            });
+        }
+
         let parts: Vec<&str> = s.split('-').collect();
         let mut modifiers = KeyModifiers::empty();
         let code_str;
@@ -71,31 +78,56 @@ impl Keymap {
         use Action::*;
 
         let normal = self.mappings.entry(Normal).or_default();
-        normal.insert(KeyCombination::from_str("j").unwrap(), MoveDown);
-        normal.insert(KeyCombination::from_str("k").unwrap(), MoveUp);
-        normal.insert(KeyCombination::from_str("G").unwrap(), MoveToBottom);
-        normal.insert(KeyCombination::from_str("ctrl-d").unwrap(), PageDown);
-        normal.insert(KeyCombination::from_str("ctrl-u").unwrap(), PageUp);
-        normal.insert(KeyCombination::from_str("i").unwrap(), EnterInsert);
-        normal.insert(KeyCombination::from_str("o").unwrap(), EnterInsertBelow);
-        normal.insert(KeyCombination::from_str("O").unwrap(), EnterInsertAbove);
-        normal.insert(KeyCombination::from_str("d").unwrap(), Delete);
-        normal.insert(KeyCombination::from_str("v").unwrap(), EnterVisual);
-        normal.insert(KeyCombination::from_str(":").unwrap(), EnterCommand);
-        normal.insert(KeyCombination::from_str("enter").unwrap(), CycleStatus);
-        normal.insert(KeyCombination::from_str("+").unwrap(), IncreasePriority);
-        normal.insert(KeyCombination::from_str("-").unwrap(), DecreasePriority);
-        normal.insert(KeyCombination::from_str("q").unwrap(), Quit);
+        let defaults = [
+            ("j", MoveDown),
+            ("k", MoveUp),
+            ("G", MoveToBottom),
+            ("ctrl-d", PageDown),
+            ("ctrl-u", PageUp),
+            ("i", EnterInsert),
+            ("o", EnterInsertBelow),
+            ("O", EnterInsertAbove),
+            ("d", Delete),
+            ("v", EnterVisual),
+            (":", EnterCommand),
+            ("enter", CycleStatus),
+            ("+", IncreasePriority),
+            ("-", DecreasePriority),
+            ("u", Undo),
+            ("q", Quit),
+        ];
+
+        for (key, action) in defaults {
+            let combo = KeyCombination::from_str(key)
+                .expect(&format!("Failed to parse default keybinding: {}", key));
+            normal.insert(combo, action);
+        }
 
         let visual = self.mappings.entry(Visual).or_default();
-        visual.insert(KeyCombination::from_str("j").unwrap(), MoveDown);
-        visual.insert(KeyCombination::from_str("k").unwrap(), MoveUp);
-        visual.insert(KeyCombination::from_str("d").unwrap(), Delete);
-        visual.insert(KeyCombination::from_str("esc").unwrap(), Cancel);
+        let visual_defaults = [
+            ("j", MoveDown),
+            ("k", MoveUp),
+            ("d", Delete),
+            ("esc", Cancel),
+        ];
+
+        for (key, action) in visual_defaults {
+            let combo = KeyCombination::from_str(key)
+                .expect(&format!("Failed to parse visual keybinding: {}", key));
+            visual.insert(combo, action);
+        }
 
         let stats = self.mappings.entry(Stats).or_default();
-        stats.insert(KeyCombination::from_str("q").unwrap(), Cancel);
-        stats.insert(KeyCombination::from_str("esc").unwrap(), Cancel);
+        let stats_defaults = [
+            ("q", Cancel),
+            ("esc", Cancel),
+        ];
+
+        for (key, action) in stats_defaults {
+            let combo = KeyCombination::from_str(key)
+                .expect(&format!("Failed to parse stats keybinding: {}", key));
+            stats.insert(combo, action);
+        }
     }
 
     pub fn get_action(&self, mode: Mode, event: KeyEvent) -> Option<Action> {

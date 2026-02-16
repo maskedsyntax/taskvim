@@ -19,6 +19,8 @@ pub enum Action {
     EnterVisual,
     EnterCommand,
     Cancel,
+    Undo,
+    Redo,
 }
 
 impl FromStr for Action {
@@ -43,6 +45,8 @@ impl FromStr for Action {
             "visual" => Ok(Action::EnterVisual),
             "command" => Ok(Action::EnterCommand),
             "cancel" => Ok(Action::Cancel),
+            "undo" => Ok(Action::Undo),
+            "redo" => Ok(Action::Redo),
             _ => Err(()),
         }
     }

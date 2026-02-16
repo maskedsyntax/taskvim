@@ -154,6 +154,7 @@ impl AppState {
     pub fn commit_edit(&mut self) -> Result<()> {
         if let Some(id) = self.editing_task_id {
             if let Some(mut task) = self.tasks.iter().find(|t| t.id == id).cloned() {
+                self.storage.push_history(&task)?;
                 task.title = self.command_buffer.clone();
                 task.updated_at = Utc::now();
                 self.storage.save_task(&task)?;
@@ -188,9 +189,20 @@ impl AppState {
         Ok(())
     }
 
+    pub fn undo(&mut self) -> Result<()> {
+        if let Some((hist_id, task)) = self.storage.get_latest_history()? {
+            // To support redo, we could push current state to a redo table here
+            self.storage.save_task(&task)?;
+            self.storage.delete_history_entry(hist_id)?;
+            self.reload_tasks()?;
+        }
+        Ok(())
+    }
+
     pub fn increase_priority(&mut self) -> Result<()> {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
             if task.priority < 5 {
+                self.storage.push_history(&task)?;
                 task.priority += 1;
                 self.storage.save_task(&task)?;
                 self.reload_tasks()?;
@@ -202,6 +214,7 @@ impl AppState {
     pub fn decrease_priority(&mut self) -> Result<()> {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
             if task.priority > 1 {
+                self.storage.push_history(&task)?;
                 task.priority -= 1;
                 self.storage.save_task(&task)?;
                 self.reload_tasks()?;
@@ -212,6 +225,7 @@ impl AppState {
 
     pub fn cycle_status(&mut self) -> Result<()> {
         if let Some(mut task) = self.tasks.get(self.selected_index).cloned() {
+            self.storage.push_history(&task)?;
             task.status = match task.status {
                 TaskStatus::Todo => TaskStatus::Doing,
                 TaskStatus::Doing => TaskStatus::Done,
@@ -296,6 +310,10 @@ impl AppState {
                 self.mode = Mode::Normal;
                 self.selection_anchor = None;
                 self.editing_task_id = None;
+            }
+            Action::Undo => self.undo()?,
+            Action::Redo => {
+                // TODO: Implement redo
             }
         }
         Ok(())

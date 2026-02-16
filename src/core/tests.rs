@@ -50,4 +50,32 @@ mod tests {
         assert_eq!(state.tasks[0].title, "Edited Title");
         assert_eq!(state.editing_task_id, None);
     }
+
+    #[test]
+    fn test_undo_functionality() {
+        let tmp_file = NamedTempFile::new().unwrap();
+        let path = tmp_file.path().to_str().unwrap();
+        let storage = SqliteStorage::new(path).unwrap();
+        let mut state = AppState::new(storage, crate::config::lua::Config::default()).unwrap();
+
+        state.add_task("Initial Task".to_string()).unwrap();
+        state.selected_index = 0;
+        
+        // Change title
+        state.start_editing();
+        state.command_buffer = "Changed Task".to_string();
+        state.commit_edit().unwrap();
+        assert_eq!(state.tasks[0].title, "Changed Task");
+
+        // Undo
+        state.undo().unwrap();
+        assert_eq!(state.tasks[0].title, "Initial Task");
+
+        // Change priority
+        state.increase_priority().unwrap();
+        assert_eq!(state.tasks[0].priority, 4); // default 3 + 1
+
+        state.undo().unwrap();
+        assert_eq!(state.tasks[0].priority, 3);
+    }
 }

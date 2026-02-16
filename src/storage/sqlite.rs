@@ -216,4 +216,33 @@ impl SqliteStorage {
         self.conn.execute("DELETE FROM tasks WHERE id = ?", [id.to_string()])?;
         Ok(())
     }
+
+    pub fn push_history(&self, task: &Task) -> Result<()> {
+        let snapshot = serde_json::to_string(task)?;
+        self.conn.execute(
+            "INSERT INTO history (task_id, snapshot, timestamp) VALUES (?, ?, ?)",
+            params![task.id.to_string(), snapshot, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_latest_history(&self) -> Result<Option<(i64, Task)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, snapshot FROM history ORDER BY id DESC LIMIT 1"
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let id: i64 = row.get(0)?;
+            let snapshot: String = row.get(1)?;
+            let task: Task = serde_json::from_str(&snapshot)?;
+            Ok(Some((id, task)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn delete_history_entry(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM history WHERE id = ?", [id])?;
+        Ok(())
+    }
 }
